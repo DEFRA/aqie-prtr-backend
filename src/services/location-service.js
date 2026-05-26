@@ -1,5 +1,5 @@
 import { config } from '#src/config.js'
-
+import { fetchWithRetry } from '#src/common/helpers/fetch-with-retry.js'
 /**
  * Thrown when aqie-location-backend is unreachable, times out, returns non-2xx,
  * or returns malformed JSON. Lets the route map upstream failures to a clean 502.
@@ -35,9 +35,6 @@ export async function searchLocation(query, opts = {}) {
   const timeoutMs = config.get('OSPlaceApiTimeoutMs')
   const tracingHeader = config.get('tracing.header')
 
-  const controller = new AbortController()
-  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs)
-
   const headers = {
     'Content-Type': 'application/json',
     Accept: 'application/json',
@@ -46,28 +43,28 @@ export async function searchLocation(query, opts = {}) {
   const cdpXApiKey = config.get('OSPlaceApiKey')
 
   //TODO: remove when going to PROD
+  /* v8 ignore next 3 - local only x-api-key */
   if (cdpXApiKey) {
     headers['x-api-key'] = cdpXApiKey
   }
+
   if (opts.traceId) {
     headers[tracingHeader] = opts.traceId
   }
 
   let response
   try {
-    response = await fetch(url, {
+    response = await fetchWithRetry((signal)=> fetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify({ userLocation: query }),
-      signal: controller.signal
-    })
+      signal
+    }), {operationName: 'searchLocation', timeoutMs})
   } catch (err) {
-    const reason = controller.signal.aborted
-      ? `Request to ${url} timed out after ${timeoutMs}ms`
-      : `Failed to reach location backend at ${url}`
-    throw new LocationBackendError(reason, { cause: err })
-  } finally {
-    clearTimeout(timeoutHandle)
+ throw new LocationBackendError(
+   `Failed to reach location backend at ${url}: ${err.message}`,
+   {cause: err}
+ )
   }
 
   if (!response.ok) {
