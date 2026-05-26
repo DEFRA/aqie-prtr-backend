@@ -2,14 +2,14 @@ import Hapi from '@hapi/hapi'
 
 import { secureContext } from '@defra/hapi-secure-context'
 
-import { config } from '#/config.js'
-import { router } from '#/plugins/router.js'
-import { requestLogger } from '#/plugins/request-logger.js'
-import { mongoDb } from '#/plugins/mongodb.js'
-import { failAction } from '#/common/helpers/fail-action.js'
-import { pulse } from '#/plugins/pulse.js'
-import { requestTracing } from '#/plugins/request-tracing.js'
-import { setupProxy } from '#/common/helpers/proxy/setup-proxy.js'
+import { config } from '#src/config.js'
+import { router } from '#src/plugins/router.js'
+import { requestLogger } from '#src/plugins/request-logger.js'
+import { mongoDb } from '#src/plugins/mongodb.js'
+import { failAction } from '#src/common/helpers/fail-action.js'
+import { pulse } from '#src/plugins/pulse.js'
+import { requestTracing } from '#src/plugins/request-tracing.js'
+import { setupProxy } from '#src/common/helpers/proxy/setup-proxy.js'
 import { metrics } from '@defra/cdp-metrics'
 
 export async function createServer() {

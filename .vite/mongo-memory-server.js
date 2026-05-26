@@ -5,13 +5,12 @@ beforeAll(async () => {
   // Setup mongo mock
   await setup({
     binary: {
-      version: 'latest'
+      version: '7.0.28'
     },
-    serverOptions: {},
-    autoStart: false
+    serverOptions: {}
   })
   process.env.MONGO_URI = globalThis.__MONGO_URI__
-})
+}, 120_000)
 
 afterAll(async () => {
   await teardown()

@@ -6,6 +6,8 @@ export default defineConfig({
     environment: 'node',
     clearMocks: true,
     fileParallelism: false,
+    hookTimeOut: 120_000,
+    testTimeOut: 30_000,
     coverage: {
       provider: 'v8',
       reportsDirectory: './coverage',
