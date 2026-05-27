@@ -1,4 +1,5 @@
 import { createLogger } from './logging/logger.js'
+import { randomInt } from 'node:crypto.js'
 
 const logger = createLogger()
 
@@ -11,7 +12,7 @@ function delay(ms) {
 }
 
 function getBackoffDelay(attempt, baseMs) {
-  const jitterMs = Math.random() * 100
+  const jitterMs = randomInt(0, 100)
   return baseMs * 2 ** attempt + jitterMs
 }
 
