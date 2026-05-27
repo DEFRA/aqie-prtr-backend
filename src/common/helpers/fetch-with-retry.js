@@ -1,5 +1,5 @@
 import { createLogger } from './logging/logger.js'
-import { randomInt } from 'node:crypto.js'
+import { randomInt } from 'node:crypto'
 
 const logger = createLogger()
 
