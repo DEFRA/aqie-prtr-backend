@@ -9,7 +9,9 @@ export class LocationBackendError extends Error {
     super(message)
     this.name = 'LocationBackendError'
     this.status = status ?? null
-    if (cause) this.cause = cause
+    if (cause) {
+      this.cause = cause
+    }
   }
 }
 
