@@ -49,7 +49,7 @@ describe('handleLocationsSearch', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-      ; ({ h, responseBuilder } = buildResponseToolkit())
+    ;({ h, responseBuilder } = buildResponseToolkit())
     request = {
       query: { q: 'newcastle' },
       headers: { 'x-cdp-request-id': 'trace-abc' }
@@ -122,7 +122,9 @@ describe('handleLocationsSearch', () => {
     const unexpectedError = new TypeError('something else went wrong')
     searchLocation.mockRejectedValue(unexpectedError)
 
-    await expect(handleLocationsSearch(request, h)).rejects.toBe(unexpectedError)
+    await expect(handleLocationsSearch(request, h)).rejects.toBe(
+      unexpectedError
+    )
     expect(h.response).not.toHaveBeenCalled()
   })
 

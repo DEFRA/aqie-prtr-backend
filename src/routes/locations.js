@@ -61,7 +61,8 @@ export const locations = [
     path: '/locations/search',
     options: {
       tags: ['api', 'locations'],
-      description: 'Search for UK place names and postcodes via aqie-location-backend.',
+      description:
+        'Search for UK place names and postcodes via aqie-location-backend.',
       validate: { query: querySchema }
     },
     handler: handleLocationsSearch

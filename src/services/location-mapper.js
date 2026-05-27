@@ -1,4 +1,4 @@
-import { bngToLatLng } from "#src/services/coords.js";
+import { bngToLatLng } from '#src/services/coords.js'
 
 /**
  * Map a single GAZETTEER_ENTRY in to clean shape
@@ -22,8 +22,7 @@ function mapEntry(gazEntry) {
     region: gazEntry.REGION ?? null,
     postcodeDistrict: gazEntry.POSTCODE_DISTRICT ?? null,
     lat,
-    lng,
-
+    lng
   }
 }
 

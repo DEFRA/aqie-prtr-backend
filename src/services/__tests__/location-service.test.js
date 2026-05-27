@@ -59,7 +59,9 @@ describe('searchLocation', () => {
   it('throws LocationBackendError on network failure', async () => {
     fetch.mockRejectedValue(new Error('ECONNREFUSED'))
 
-    await expect(searchLocation('x')).rejects.toBeInstanceOf(LocationBackendError)
+    await expect(searchLocation('x')).rejects.toBeInstanceOf(
+      LocationBackendError
+    )
   })
 
   it('throws LocationBackendError on malformed JSON', async () => {

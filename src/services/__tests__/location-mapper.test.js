@@ -38,8 +38,11 @@ describe('mapLocationResponse', () => {
   it('uses null for missing optional fields', () => {
     const minimal = {
       GAZETTEER_ENTRY: {
-        ID: 'foo', NAME1: 'Foo', LOCAL_TYPE: 'Village',
-        GEOMETRY_X: 400000, GEOMETRY_Y: 300000
+        ID: 'foo',
+        NAME1: 'Foo',
+        LOCAL_TYPE: 'Village',
+        GEOMETRY_X: 400000,
+        GEOMETRY_Y: 300000
       }
     }
     const r = mapLocationResponse('foo', { getOSPlaces: [minimal] })
