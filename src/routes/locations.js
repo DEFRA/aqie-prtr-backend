@@ -8,6 +8,7 @@ import {
   LocationBackendError
 } from '#src/services/location-service.js'
 import { mapLocationResponse } from '#src/services/location-mapper.js'
+import { statusCodes } from '#src/common/constants/status-codes.js'
 
 const logger = createLogger()
 
@@ -40,7 +41,7 @@ export async function handleLocationsSearch(request, h) {
     logger.info(
       `[locations.search] succeeded for q="${q}" count=${mapped.count}`
     )
-    return h.response(mapped).code(200)
+    return h.response(mapped).code(statusCodes.ok)
   } catch (error) {
     if (error instanceof LocationBackendError) {
       logger.error(
