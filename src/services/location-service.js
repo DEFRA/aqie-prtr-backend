@@ -54,17 +54,17 @@ export async function searchLocation(query, opts = {}) {
 
   let response
   try {
-    response = await fetchWithRetry((signal)=> fetch(url, {
+    response = await fetchWithRetry((signal) => fetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify({ userLocation: query }),
       signal
-    }), {operationName: 'searchLocation', timeoutMs})
+    }), { operationName: 'searchLocation', timeoutMs })
   } catch (err) {
- throw new LocationBackendError(
-   `Failed to reach location backend at ${url}: ${err.message}`,
-   {cause: err}
- )
+    throw new LocationBackendError(
+      `Failed to reach location backend at ${url}: ${err.message}`,
+      { cause: err }
+    )
   }
 
   if (!response.ok) {

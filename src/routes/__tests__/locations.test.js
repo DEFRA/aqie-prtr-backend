@@ -49,7 +49,7 @@ describe('handleLocationsSearch', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    ;({ h, responseBuilder } = buildResponseToolkit())
+      ; ({ h, responseBuilder } = buildResponseToolkit())
     request = {
       query: { q: 'newcastle' },
       headers: { 'x-cdp-request-id': 'trace-abc' }
