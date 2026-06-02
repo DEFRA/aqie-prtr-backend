@@ -1,7 +1,7 @@
 import convict from 'convict'
 import convictFormatWithValidator from 'convict-format-with-validator'
 
-import { convictValidateMongoUri } from '#/common/helpers/convict/validate-mongo-uri.js'
+import { convictValidateMongoUri } from '#src/common/helpers/convict/validate-mongo-uri.js'
 
 convict.addFormat(convictValidateMongoUri)
 convict.addFormats(convictFormatWithValidator)
@@ -112,6 +112,33 @@ export const config = convict({
       }
     }
   },
+  OSPlaceApiUrl: {
+    doc: 'Base URL of aqie-location-backend - internal service this BFF calls for the OS names lookups. The upstream service own the API Key',
+    format: String,
+    default: `https://aqie-location-backend.${process.env.ENVIRONMENT}.cdp-int.defra.cloud/osnameplaces`,
+    env: 'OSPLACE_API_URL'
+  },
+  OSPlaceApiTimeoutMs: {
+    doc: 'Request timeout (ms) for calls to aqie-location-backened',
+    format: 'nat',
+    default: 10000,
+    env: 'OSPLACE_API_TIMEOUT_MS'
+  },
+  //TODO: replace this commented code before going to prod, keep till than for local dev
+  // OSPlaceApiUrl: {
+  //   doc: 'OSPlace API url',
+  //   format: String,
+  //   // default: `https://aqie-location-backend.dev.cdp-int.defra.cloud/osnameplaces`,
+  //   default: `https://ephemeral-protected.api.dev.cdp-int.defra.cloud/aqie-location-backend/osnameplaces`,
+  //   // default: `http://localhost:3001/osnameplaces`,
+  //   env: 'OSPLACE_API_URL'
+  // },
+  OSPlaceApiKey: {
+    doc: 'OSPlace API key',
+    format: String,
+    default: '',
+    env: 'OSPLACE_API_KEY'
+  },
   httpProxy: {
     doc: 'HTTP Proxy URL',
     format: String,
@@ -126,6 +153,12 @@ export const config = convict({
       default: 'x-cdp-request-id',
       env: 'TRACING_HEADER'
     }
+  },
+  allowOriginUrl: {
+    doc: 'URL to access-control-allow-origin',
+    format: String,
+    default: '',
+    env: 'ACCESS_CONTROL_ALLOW_ORIGIN_URL'
   }
 })
 

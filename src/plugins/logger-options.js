@@ -1,5 +1,5 @@
 import { ecsFormat } from '@elastic/ecs-pino-format'
-import { config } from '#/config.js'
+import { config } from '#src/config.js'
 import { getTraceId } from '@defra/hapi-tracing'
 
 const logConfig = config.get('log')

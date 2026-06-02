@@ -4,5 +4,8 @@ export default neostandard({
   env: ['node', 'vitest'],
   ignores: [...neostandard.resolveIgnoresFromGitignore()],
   noJsx: true,
-  noStyle: true
+  noStyle: true,
+  rules: {
+    curly: ['error', 'all']
+  }
 })

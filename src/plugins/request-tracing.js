@@ -1,5 +1,5 @@
 import { tracing } from '@defra/hapi-tracing'
-import { config } from '#/config.js'
+import { config } from '#src/config.js'
 
 export const requestTracing = {
   plugin: tracing.plugin,

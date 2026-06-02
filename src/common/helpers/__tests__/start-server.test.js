@@ -8,8 +8,8 @@ describe('#startServer', () => {
 
   beforeAll(async () => {
     vi.stubEnv('PORT', '3098')
-    createServerImport = await import('#/server.js')
-    startServerImport = await import('./start-server.js')
+    createServerImport = await import('#src/server.js')
+    startServerImport = await import('../start-server.js')
 
     createServerSpy = vi.spyOn(createServerImport, 'createServer')
     hapiServerSpy = vi.spyOn(hapi, 'server')
