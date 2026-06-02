@@ -20,6 +20,7 @@ const querySchema = Joi.object({
     .trim()
     .min(MIN_QUERY_LENGTH)
     .max(MAX_QUERY_LENGTH)
+    .pattern(/^[\p{L}\p{N} ,.'-]+$/u)
     .required()
     .description('Postcode, town, or place name. Min 2, max 100 chars.')
 })
