@@ -39,7 +39,7 @@ describe('searchLocation', () => {
   })
 
   it('forwards trace id when provided', async () => {
-    fetch.mockResolvedValue(fakeResponse({ body: '{}' }))
+    fetch.mockResolvedValue(fakeResponse({ body: '{"getOSPlaces":[]}' }))
 
     await searchLocation('newcastle', { traceId: 'trace-abc' })
 
@@ -70,6 +70,23 @@ describe('searchLocation', () => {
       status: 200,
       json: async () => JSON.parse('not json')
     })
+
+    await expect(searchLocation('x')).rejects.toMatchObject({
+      name: 'LocationBackendError'
+    })
+  })
+
+  it('throws LocationBackendError when response is missing getOSPlaces', async () => {
+    fetch.mockResolvedValue(fakeResponse({ body: '{"unexpected":"shape"}' }))
+
+    await expect(searchLocation('x')).rejects.toMatchObject({
+      name: 'LocationBackendError',
+      message: expect.stringContaining('missing expected `getOSPlaces`')
+    })
+  })
+
+  it('throws LocationBackendError when response body is null', async () => {
+    fetch.mockResolvedValue(fakeResponse({ body: 'null' }))
 
     await expect(searchLocation('x')).rejects.toMatchObject({
       name: 'LocationBackendError'

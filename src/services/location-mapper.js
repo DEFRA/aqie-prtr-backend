@@ -33,8 +33,31 @@ function mapEntry(gazEntry) {
  * @return {{ query: string, count: number, results: object[] }}
  */
 
-export function mapLocationResponse(query, raw) {
+export function mapLocationResponse(query, raw, logger) {
+  if (raw?.getOSPlaces !== undefined && !Array.isArray(raw.getOSPlaces)) {
+    throw new Error(
+      `Expected raw.getOSPlaces to be an array, got ${typeof raw.getOSPlaces}`
+    )
+  }
+
   const matches = Array.isArray(raw?.getOSPlaces) ? raw.getOSPlaces : []
-  const results = matches.map((m) => mapEntry(m.GAZETTEER_ENTRY))
+  const results = []
+  for (const m of matches) {
+    const entry = m?.GAZETTEER_ENTRY
+    if (
+      !entry ||
+      entry.ID == null ||
+      entry.GEOMETRY_X == null ||
+      entry.GEOMETRY_Y == null
+    ) {
+      logger?.warn(
+        { entry },
+        'Skipping malformed gazetteer entry: missing ID or coordinates'
+      )
+      continue
+    }
+    results.push(mapEntry(entry))
+  }
+
   return { query, count: results.length, results }
 }

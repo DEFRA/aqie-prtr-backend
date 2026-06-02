@@ -37,7 +37,7 @@ export async function handleLocationsSearch(request, h) {
 
   try {
     const raw = await searchLocation(q, { traceId })
-    const mapped = mapLocationResponse(q, raw)
+    const mapped = mapLocationResponse(q, raw, logger)
     logger.info(
       `[locations.search] succeeded for q="${q}" count=${mapped.count}`
     )

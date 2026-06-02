@@ -80,11 +80,20 @@ export async function searchLocation(query, opts = {}) {
     )
   }
 
+  let payload
   try {
-    return await response.json()
+    payload = await response.json()
   } catch (err) {
     throw new LocationBackendError('Location backend returned invalid JSON', {
       cause: err
     })
   }
+
+  if (!payload || typeof payload !== 'object' || !('getOSPlaces' in payload)) {
+    throw new LocationBackendError(
+      'Location backend response missing expected `getOSPlaces` field',
+      { status: response.status }
+    )
+  }
+  return payload
 }
