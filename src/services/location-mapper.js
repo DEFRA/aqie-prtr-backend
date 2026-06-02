@@ -45,10 +45,9 @@ export function mapLocationResponse(query, raw, logger) {
   for (const m of matches) {
     const entry = m?.GAZETTEER_ENTRY
     if (
-      !entry ||
-      entry.ID == null ||
-      entry.GEOMETRY_X == null ||
-      entry.GEOMETRY_Y == null
+      entry?.ID == null ||
+      entry?.GEOMETRY_X == null ||
+      entry?.GEOMETRY_Y == null
     ) {
       logger?.warn(
         { entry },
