@@ -133,12 +133,12 @@ export const config = convict({
   //   // default: `http://localhost:3001/osnameplaces`,
   //   env: 'OSPLACE_API_URL'
   // },
-  OSPlaceApiKey: {
-    doc: 'OSPlace API key',
-    format: String,
-    default: '',
-    env: 'OSPLACE_API_KEY'
-  },
+  // OSPlaceApiKey: {
+  //   doc: 'OSPlace API key',
+  //   format: String,
+  //   default: '',
+  //   env: 'OSPLACE_API_KEY'
+  // },
   httpProxy: {
     doc: 'HTTP Proxy URL',
     format: String,
