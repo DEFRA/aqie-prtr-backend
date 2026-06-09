@@ -1,10 +1,7 @@
 async function getYears(db, logger) {
   try {
     const yearsCollection = db.collection('Years')
-    const years = await yearsCollection
-      .find({})
-      .sort({ year: -1 })
-      .toArray()
+    const years = await yearsCollection.find({}).sort({ year: -1 }).toArray()
 
     return {
       success: true,
@@ -22,6 +19,4 @@ async function getYears(db, logger) {
   }
 }
 
-export {
-  getYears
-}
+export { getYears }

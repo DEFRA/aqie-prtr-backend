@@ -6,6 +6,7 @@ import { getYears as getYearsController } from '../../controllers/years-controll
 import { createLogger } from '../../common/helpers/logging/logger.js' // Using existing logger setup to test
 import { config } from '#src/config.js'
 import { listBucketContents } from '../../services/s3-service.js' // Using existing S3 service to test
+import { statusCodes } from '../../common/constants/status-codes.js'
 
 const logger = createLogger('s3-service')
 
@@ -40,7 +41,7 @@ export const getYears = {
     // Get years from database
     try {
       const result = await getYearsController(request.db, request.logger)
-      return h.response(result).code(200)
+      return h.response(result).code(statusCodes.ok)
     } catch (error) {
       return h
         .response({
@@ -48,7 +49,7 @@ export const getYears = {
           message: 'Failed to fetch years',
           error: error.message
         })
-        .code(500)
+        .code(statusCodes.internalServerError)
     }
   }
 }
