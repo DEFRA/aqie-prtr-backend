@@ -24,7 +24,7 @@ const s3Client = new S3Client({
 export const listBucketContents = async (bucketName, prefix = '') => {
   const command = new ListObjectsV2Command({
     Bucket: bucketName,
-    Prefix: prefix, // TODO:Use this if you only want to see files inside a specific "folder" , folder might be better for future different uploads
+    Prefix: prefix // TODO:Use this if you only want to see files inside a specific "folder" , folder might be better for future different uploads
   })
 
   try {

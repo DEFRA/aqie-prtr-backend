@@ -25,7 +25,9 @@ export const getYears = {
 
     try {
       const files = await listBucketContents(bucketName, prefix)
-      logger.info(`Successfully fetched ${files.length} files from ${bucketName}`)
+      logger.info(
+        `Successfully fetched ${files.length} files from ${bucketName}`
+      )
       request.log(
         ['info', 's3'],
         `Successfully fetched ${files.length} files from ${bucketName}`
