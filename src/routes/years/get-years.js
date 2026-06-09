@@ -34,7 +34,7 @@ export const getYears = {
       )
     } catch (error) {
       request.log(['error', 's3'], error.message)
-      //throw error; // TODO: for now, don't want to throw here,so to continue to fetch years from DB even if S3 fails
+      //throw error; //for now, don't want to throw here,so to continue to fetch years from DB even if S3 fails
       logger.error(
         `Failed to list S3 contents for ${bucketName}: ${error.message}. Continuing with DB years fetch.`
       )
