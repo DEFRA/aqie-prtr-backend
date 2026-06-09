@@ -3,6 +3,7 @@
  */
 
 import { getYears as getYearsController } from '../../controllers/years-controller.js'
+import { statusCodes } from '../../common/constants/status-codes.js'
 
 export const getYears = {
   method: 'GET',
@@ -15,7 +16,7 @@ export const getYears = {
   handler: async (request, h) => {
     try {
       const result = await getYearsController(request.db, request.logger)
-      return h.response(result).code(200)
+      return h.response(result).code(statusCodes.ok)
     } catch (error) {
       return h
         .response({
@@ -23,7 +24,7 @@ export const getYears = {
           message: 'Failed to fetch years',
           error: error.message
         })
-        .code(500)
+        .code(statusCodes.internalServerError)
     }
   }
 }
