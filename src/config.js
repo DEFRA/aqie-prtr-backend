@@ -112,6 +112,20 @@ export const config = convict({
       }
     }
   },
+  s3: {
+    bucket: {
+      doc: 'S3 bucket name for file (xmls) storage',
+      format: String,
+      default: 'dev-aqie-prtr-backend-c63f2',
+      env: 'S3_BUCKET'
+    },
+    region: {
+      doc: 'AWS region for S3 bucket',
+      format: String,
+      default: 'eu-west-2',
+      env: 'AWS_REGION'
+    }
+  },
   OSPlaceApiUrl: {
     doc: 'Base URL of aqie-location-backend - internal service this BFF calls for the OS names lookups. The upstream service own the API Key',
     format: String,
