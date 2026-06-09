@@ -6,6 +6,7 @@
 // Similar pattern to your existing location-service.js
 
 import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3'
+import { config } from '#src/config.js'
 
 // Initialize the S3 Client.
 // If running on AWS (ECS, EKS, Lambda), leave the object empty {};

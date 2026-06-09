@@ -3,7 +3,9 @@
  */
 
 import { getYears as getYearsController } from '../../controllers/years-controller.js'
-import { createLogger } from './common/helpers/logging/logger.js' // Using existing logger setup to test
+import { createLogger } from '../../common/helpers/logging/logger.js' // Using existing logger setup to test
+import { config } from '#src/config.js'
+import { listBucketContents } from '../../services/s3-service.js' // Using existing S3 service to test
 
 const logger = createLogger('s3-service')
 
@@ -29,7 +31,10 @@ export const getYears = {
       )
     } catch (error) {
       request.log(['error', 's3'], error.message)
-      throw error
+      //throw error; // TODO: for now, don't want to throw here,so to continue to fetch years from DB even if S3 fails
+      logger.error(
+        `Failed to list S3 contents for ${bucketName}: ${error.message}. Continuing with DB years fetch.`
+      )
     }
 
     // Get years from database
