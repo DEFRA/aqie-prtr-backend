@@ -5,7 +5,11 @@
 // Delete objects
 // Similar pattern to your existing location-service.js
 
-import { S3Client, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3'
+import {
+  S3Client,
+  ListObjectsV2Command,
+  GetObjectCommand
+} from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { config } from '#src/config.js'
 
@@ -65,12 +69,16 @@ export const getDownloadLinksAndSaveToDB = async (db, bucketName) => {
         expiresIn: 9000
       })
 
-      await db.collection('Years').updateOne(
-        { yearID: index + 1 },
-        { $set: { downloadLink: presignedUrl } }
-      )
+      await db
+        .collection('Years')
+        .updateOne(
+          { yearID: index + 1 },
+          { $set: { downloadLink: presignedUrl } }
+        )
     }
   } catch (error) {
-    throw new Error(`Failed to generate and save S3 download links: ${error.message}`)
+    throw new Error(
+      `Failed to generate and save S3 download links: ${error.message}`
+    )
   }
 }

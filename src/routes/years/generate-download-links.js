@@ -16,20 +16,19 @@ export const generateDownloadLinks = {
   },
   handler: async (request, h) => {
     try {
-      await getDownloadLinksAndSaveToDB(
-        request.db,
-        config.get('s3.bucket')
-      )
+      await getDownloadLinksAndSaveToDB(request.db, config.get('s3.bucket'))
 
       request.log(
         ['info', 'download-links'],
         'Generated download links for years'
       )
 
-      return h.response({
-        success: true,
-        message: 'Download links generated successfully'
-      }).code(statusCodes.ok)
+      return h
+        .response({
+          success: true,
+          message: 'Download links generated successfully'
+        })
+        .code(statusCodes.ok)
     } catch (error) {
       return h
         .response({
