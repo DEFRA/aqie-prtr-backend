@@ -101,7 +101,7 @@ export const getDownloadLinkAndSaveToDB = async (db, bucketName, year) => {
     // Updates the database for this specific dataset file
     await db
       .collection('Years')
-      .updateOne({ year: year }, { $set: { downloadLink: presignedUrl } })
+      .updateOne({ year }, { $set: { downloadLink: presignedUrl } })
   } catch (error) {
     throw new Error(
       `Failed to generate and save S3 download link: ${error.message}`

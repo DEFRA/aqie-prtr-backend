@@ -15,8 +15,9 @@ export const generateDownloadLink = {
     notes: 'Generates download link for a specific year'
   },
   handler: async (request, h) => {
+    const { year } = request.params
+
     try {
-      const { year } = request.params
       await getDownloadLinkAndSaveToDB(
         request.db,
         config.get('s3.bucket'),
