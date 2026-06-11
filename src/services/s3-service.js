@@ -5,7 +5,12 @@
 // Delete objects
 // Similar pattern to your existing location-service.js
 
-import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3'
+import {
+  S3Client,
+  ListObjectsV2Command,
+  GetObjectCommand
+} from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { config } from '#src/config.js'
 
 // Initialize the S3 Client.
@@ -44,5 +49,36 @@ export const listBucketContents = async (bucketName, prefix = '') => {
   } catch (error) {
     // Integrate this with your structured logging (hapi-pino) in your actual route
     throw new Error(`Failed to list S3 contents: ${error.message}`)
+  }
+}
+
+export const getDownloadLinksAndSaveToDB = async (db, bucketName) => {
+  try {
+    const listCommand = new ListObjectsV2Command({ Bucket: bucketName })
+    const s3Response = await s3Client.send(listCommand)
+    const files = s3Response.Contents || []
+
+    for (const [index, file] of files.entries()) {
+      const downloadCommand = new GetObjectCommand({
+        Bucket: bucketName,
+        Key: file.Key
+      })
+
+      // Generate a temporary download link (expires in 150 mins)
+      const presignedUrl = await getSignedUrl(s3Client, downloadCommand, {
+        expiresIn: 9000
+      })
+
+      await db
+        .collection('Years')
+        .updateOne(
+          { yearID: index + 1 },
+          { $set: { downloadLink: presignedUrl } }
+        )
+    }
+  } catch (error) {
+    throw new Error(
+      `Failed to generate and save S3 download links: ${error.message}`
+    )
   }
 }
