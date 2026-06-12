@@ -12,6 +12,9 @@ import {
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { config } from '#src/config.js'
+import { createLogger } from '#src/common/helpers/logging/logger.js'
+
+const logger = createLogger()
 
 // Initialize the S3 Client.
 // If running on AWS (ECS, EKS, Lambda), leave the object empty {};
@@ -48,6 +51,7 @@ export const listBucketContents = async (bucketName, prefix = '') => {
     }))
   } catch (error) {
     // Integrate this with your structured logging (hapi-pino) in your actual route
+    logger.error(error, 'Failed to list S3 contents')
     throw new Error(`Failed to list S3 contents: ${error.message}`)
   }
 }
@@ -62,6 +66,7 @@ export const getDownloadLinksAndSaveToDB = async (db, bucketName) => {
       const downloadCommand = new GetObjectCommand({
         Bucket: bucketName,
         Key: file.Key
+        //ResponseContentDisposition: `attachment; filename="${file.Key}"`
       })
 
       // Generate a temporary download link (expires in 150 mins)
@@ -85,7 +90,8 @@ export const getDownloadLinksAndSaveToDB = async (db, bucketName) => {
 
 export const getDownloadLinkAndSaveToDB = async (db, bucketName, year) => {
   try {
-    const fileKey = `uk_prtr_dataset_${year}`
+    const bucketPrefix = 'reports'
+    const fileKey = `${bucketPrefix}/uk_prtr_dataset_${year}.xml`
 
     const downloadCommand = new GetObjectCommand({
       Bucket: bucketName,
@@ -102,9 +108,39 @@ export const getDownloadLinkAndSaveToDB = async (db, bucketName, year) => {
     await db
       .collection('Years')
       .updateOne({ year }, { $set: { downloadLink: presignedUrl } })
+    logger.info(
+      `Successfully generated and saved S3 download link for year ${year} to DB, presigned URL: ${presignedUrl}`
+    )
   } catch (error) {
+    logger.error(error, 'Failed to generate and save S3 download link')
     throw new Error(
       `Failed to generate and save S3 download link: ${error.message}`
     )
+  }
+}
+
+export const generatePresignedDownloadLink = async (bucketName, year) => {
+  try {
+    const bucketPrefix = 'reports'
+    const fileKey = `${bucketPrefix}/uk_prtr_dataset_${year}.xml`
+
+    const downloadCommand = new GetObjectCommand({
+      Bucket: bucketName,
+      Key: fileKey,
+      ResponseContentDisposition: `attachment; filename="${fileKey}"`
+    })
+
+    // Generate a temporary download link (expires in 150 mins)
+    const presignedUrl = await getSignedUrl(s3Client, downloadCommand, {
+      expiresIn: 9000
+    })
+
+    logger.info(
+      `Successfully generated S3 download link for year ${year}, presigned URL: ${presignedUrl}`
+    )
+    return presignedUrl
+  } catch (error) {
+    logger.error(error, 'Failed to generate S3 download link')
+    throw new Error(`Failed to generate S3 download link: ${error.message}`)
   }
 }
