@@ -90,7 +90,8 @@ export const getDownloadLinksAndSaveToDB = async (db, bucketName) => {
 
 export const getDownloadLinkAndSaveToDB = async (db, bucketName, year) => {
   try {
-    const fileKey = `uk_prtr_dataset_${year}.xml`
+    const bucketPrefix = 'reports'
+    const fileKey = `${bucketPrefix}/uk_prtr_dataset_${year}.xml`
 
     const downloadCommand = new GetObjectCommand({
       Bucket: bucketName,
@@ -108,7 +109,7 @@ export const getDownloadLinkAndSaveToDB = async (db, bucketName, year) => {
       .collection('Years')
       .updateOne({ year }, { $set: { downloadLink: presignedUrl } })
     logger.info(
-      `Successfully generated and saved S3 download link for year ${year}`
+      `Successfully generated and saved S3 download link for year ${year} to DB, presigned URL: ${presignedUrl}`
     )
   } catch (error) {
     logger.error(error, 'Failed to generate and save S3 download link')
@@ -120,7 +121,8 @@ export const getDownloadLinkAndSaveToDB = async (db, bucketName, year) => {
 
 export const generatePresignedDownloadLink = async (bucketName, year) => {
   try {
-    const fileKey = `uk_prtr_dataset_${year}.xml`
+    const bucketPrefix = 'reports'
+    const fileKey = `${bucketPrefix}/uk_prtr_dataset_${year}.xml`
 
     const downloadCommand = new GetObjectCommand({
       Bucket: bucketName,
@@ -133,7 +135,9 @@ export const generatePresignedDownloadLink = async (bucketName, year) => {
       expiresIn: 9000
     })
 
-    logger.info(`Successfully generated S3 download link for year ${year}`)
+    logger.info(
+      `Successfully generated S3 download link for year ${year}, presigned URL: ${presignedUrl}`
+    )
     return presignedUrl
   } catch (error) {
     logger.error(error, 'Failed to generate S3 download link')
