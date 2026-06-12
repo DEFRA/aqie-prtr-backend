@@ -82,3 +82,29 @@ export const getDownloadLinksAndSaveToDB = async (db, bucketName) => {
     )
   }
 }
+
+export const getDownloadLinkAndSaveToDB = async (db, bucketName, year) => {
+  try {
+    const fileKey = `uk_prtr_dataset_${year}`
+
+    const downloadCommand = new GetObjectCommand({
+      Bucket: bucketName,
+      Key: fileKey,
+      ResponseContentDisposition: `attachment; filename="${fileKey}"`
+    })
+
+    // Generate a temporary download link (expires in 150 mins)
+    const presignedUrl = await getSignedUrl(s3Client, downloadCommand, {
+      expiresIn: 9000
+    })
+
+    // Updates the database for this specific dataset file
+    await db
+      .collection('Years')
+      .updateOne({ year }, { $set: { downloadLink: presignedUrl } })
+  } catch (error) {
+    throw new Error(
+      `Failed to generate and save S3 download link: ${error.message}`
+    )
+  }
+}
