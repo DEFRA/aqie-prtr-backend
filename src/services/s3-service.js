@@ -32,7 +32,7 @@ const s3Client = new S3Client({
 export const listBucketContents = async (bucketName, prefix = '') => {
   const command = new ListObjectsV2Command({
     Bucket: bucketName,
-    Prefix: prefix // TODO:Use this if you only want to see files inside a specific "folder" , folder might be better for future different uploads
+    Prefix: prefix
   })
 
   try {
@@ -56,23 +56,30 @@ export const listBucketContents = async (bucketName, prefix = '') => {
   }
 }
 
-export const getDownloadLinksAndSaveToDB = async (db, bucketName) => {
+export const getDownloadLinksAndSaveToDB = async (
+  db,
+  bucketName,
+  prefix = ''
+) => {
   try {
-    const listCommand = new ListObjectsV2Command({ Bucket: bucketName })
+    const listCommand = new ListObjectsV2Command({
+      Bucket: bucketName,
+      Prefix: prefix
+    })
     const s3Response = await s3Client.send(listCommand)
     const files = s3Response.Contents || []
+    const presignedUrls = []
 
     for (const [index, file] of files.entries()) {
       const downloadCommand = new GetObjectCommand({
         Bucket: bucketName,
         Key: file.Key
-        //ResponseContentDisposition: `attachment; filename="${file.Key}"`
       })
 
-      // Generate a temporary download link (expires in 150 mins)
       const presignedUrl = await getSignedUrl(s3Client, downloadCommand, {
         expiresIn: 9000
       })
+      presignedUrls.push(presignedUrl)
 
       await db
         .collection('Years')
@@ -81,6 +88,8 @@ export const getDownloadLinksAndSaveToDB = async (db, bucketName) => {
           { $set: { downloadLink: presignedUrl } }
         )
     }
+
+    return presignedUrls
   } catch (error) {
     throw new Error(
       `Failed to generate and save S3 download links: ${error.message}`
@@ -88,18 +97,23 @@ export const getDownloadLinksAndSaveToDB = async (db, bucketName) => {
   }
 }
 
-export const getDownloadLinkAndSaveToDB = async (db, bucketName, year) => {
+export const getDownloadLinkAndSaveToDB = async (
+  db,
+  bucketName,
+  year,
+  prefix = 'reports'
+) => {
   try {
-    const bucketPrefix = 'reports'
-    const fileKey = `${bucketPrefix}/uk_prtr_dataset_${year}.xml`
+    const normalizedPrefix = prefix.replace(/\/$/, '')
+    const fileKey = normalizedPrefix
+      ? `${normalizedPrefix}/uk_prtr_dataset_${year}.xml`
+      : `uk_prtr_dataset_${year}.xml`
 
     const downloadCommand = new GetObjectCommand({
       Bucket: bucketName,
-      Key: fileKey,
-      ResponseContentDisposition: `attachment; filename="${fileKey}"`
+      Key: fileKey
     })
 
-    // Generate a temporary download link (expires in 150 mins)
     const presignedUrl = await getSignedUrl(s3Client, downloadCommand, {
       expiresIn: 9000
     })
@@ -118,16 +132,20 @@ export const getDownloadLinkAndSaveToDB = async (db, bucketName, year) => {
     )
   }
 }
-
-export const generatePresignedDownloadLink = async (bucketName, year) => {
+export const generatePresignedDownloadLink = async (
+  bucketName,
+  year,
+  prefix = 'reports'
+) => {
   try {
-    const bucketPrefix = 'reports'
-    const fileKey = `${bucketPrefix}/uk_prtr_dataset_${year}.xml`
+    const normalizedPrefix = prefix.replace(/\/$/, '')
+    const fileKey = normalizedPrefix
+      ? `${normalizedPrefix}/uk_prtr_dataset_${year}.xml`
+      : `uk_prtr_dataset_${year}.xml`
 
     const downloadCommand = new GetObjectCommand({
       Bucket: bucketName,
-      Key: fileKey,
-      ResponseContentDisposition: `attachment; filename="${fileKey}"`
+      Key: fileKey
     })
 
     // Generate a temporary download link (expires in 150 mins)
