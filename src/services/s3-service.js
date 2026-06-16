@@ -27,9 +27,9 @@ const s3Client = new S3Client({
  * Lists objects within a specific S3 bucket
  * @param {string} bucketName - The name of the S3 bucket
  * @param {string} [prefix] - Optional folder path/prefix to filter by
- * @returns {Promise<Array>} - Array of object metadata
+ * @returns {Promise<number>} - Number of objects found
  */
-export const listBucketContents = async (bucketName, prefix = '') => {
+export const countBucketObjects = async (bucketName, prefix = '') => {
   const command = new ListObjectsV2Command({
     Bucket: bucketName,
     Prefix: prefix
@@ -37,20 +37,8 @@ export const listBucketContents = async (bucketName, prefix = '') => {
 
   try {
     const response = await s3Client.send(command)
-
-    // response.Contents contains the array of files
-    if (!response.Contents) {
-      return []
-    }
-
-    // Map the response to return a clean list of file details
-    return response.Contents.map((file) => ({
-      key: file.Key, // The file path/name
-      lastModified: file.LastModified,
-      size: file.Size // In bytes
-    }))
+    return response.KeyCount ?? 0
   } catch (error) {
-    // Integrate this with your structured logging (hapi-pino) in your actual route
     logger.error(error, 'Failed to list S3 contents')
     throw new Error(`Failed to list S3 contents: ${error.message}`)
   }
