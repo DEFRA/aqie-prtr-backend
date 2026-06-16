@@ -4,7 +4,7 @@
 
 import { config } from '#src/config.js'
 import { statusCodes } from '#src/common/constants/status-codes.js'
-import { generatePresignedDownloadLink } from '#src/services/s3-service.js'
+import { generatePresignedReportDownloadLink } from '#src/services/s3-service.js'
 
 export const getDownloadLink = {
   method: 'GET',
@@ -18,7 +18,7 @@ export const getDownloadLink = {
     const { year } = request.params
 
     try {
-      const presignedUrl = await generatePresignedDownloadLink(
+      const presignedUrl = await generatePresignedReportDownloadLink(
         config.get('s3.bucket'),
         year
       )

@@ -1,10 +1,5 @@
 // Business logic for S3 operations
 
-// Upload documents
-// Download documents
-// Delete objects
-// Similar pattern to your existing location-service.js
-
 import {
   S3Client,
   ListObjectsV2Command,
@@ -16,19 +11,22 @@ import { createLogger } from '#src/common/helpers/logging/logger.js'
 
 const logger = createLogger()
 
+// Constants
+const PRESIGNED_URL_EXPIRY_SECONDS = 9000 // 150 minutes
+
 // Initialize the S3 Client.
-// If running on AWS (ECS, EKS, Lambda), leave the object empty {};
 // it will automatically inherit permissions from the IAM Task Role.
 const s3Client = new S3Client({
   region: config.get('s3.region')
 })
 
 /**
- * Lists objects within a specific S3 bucket
+ * Counts objects within a specific S3 bucket
  * @param {string} bucketName - The name of the S3 bucket
  * @param {string} [prefix] - Optional folder path/prefix to filter by
  * @returns {Promise<number>} - Number of objects found
  */
+
 export const countBucketObjects = async (bucketName, prefix = '') => {
   const command = new ListObjectsV2Command({
     Bucket: bucketName,
@@ -39,21 +37,23 @@ export const countBucketObjects = async (bucketName, prefix = '') => {
     const response = await s3Client.send(command)
     return response.KeyCount ?? 0
   } catch (error) {
-    logger.error(error, 'Failed to list S3 contents')
-    throw new Error(`Failed to list S3 contents: ${error.message}`)
+    logger.error(error, 'Failed to count S3 objects')
+    throw new Error(`Failed to count S3 objects: ${error.message}`)
   }
 }
 
-export const generatePresignedDownloadLink = async (
+/**
+ * Generates a presigned download link for a PRTR dataset file
+ * @param {string} bucketName - The name of the S3 bucket
+ * @param {number} year - The year of the dataset to download
+ * @returns {Promise<string>} - A presigned URL for downloading the file
+ */
+export const generatePresignedReportDownloadLink = async (
   bucketName,
-  year,
-  prefix = 'reports'
+  year
 ) => {
   try {
-    const normalizedPrefix = prefix.replace(/\/$/, '')
-    const fileKey = normalizedPrefix
-      ? `${normalizedPrefix}/uk_prtr_dataset_${year}.xml`
-      : `uk_prtr_dataset_${year}.xml`
+    const fileKey = `reports/uk_prtr_dataset_${year}.xml`
 
     const downloadCommand = new GetObjectCommand({
       Bucket: bucketName,
@@ -62,7 +62,7 @@ export const generatePresignedDownloadLink = async (
 
     // Generate a temporary download link (expires in 150 mins)
     const presignedUrl = await getSignedUrl(s3Client, downloadCommand, {
-      expiresIn: 9000
+      expiresIn: PRESIGNED_URL_EXPIRY_SECONDS
     })
 
     logger.info(
