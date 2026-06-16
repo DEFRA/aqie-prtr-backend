@@ -9,7 +9,6 @@
   },
   "scripts": {
     "dev": "cross-env AWS_EMF_ENVIRONMENT=Local cross-env NODE_ENV=development npm run server:watch",
-    "seed": "node scripts/seed-db.js",
     "dev:debug": "cross-env AWS_EMF_ENVIRONMENT=Local cross-env NODE_ENV=development npm run server:debug",
     "docker:dev": "npm run dev",
     "format": "prettier --write \"**/*.{cjs,js,json,md}\"",

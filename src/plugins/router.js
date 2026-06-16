@@ -1,7 +1,6 @@
 import { health } from '#src/routes/health.js'
 import { locations } from '#src/routes/locations.js'
 import { getYears } from '../routes/years/get-years.js'
-import { generateDownloadLink } from '../routes/years/generate-download-link.js'
 import { getDownloadLink } from '#src/routes/years/get-download-link.js'
 
 export const router = {
@@ -12,7 +11,6 @@ export const router = {
         health,
         ...locations,
         getYears,
-        generateDownloadLink,
         getDownloadLink
       ])
     }

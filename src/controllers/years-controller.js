@@ -9,8 +9,7 @@ async function getYears(db, logger) {
       years: years.map((doc) => ({
         id: doc.yearID,
         year: doc.year,
-        yearIsLive: doc.yearIsLive,
-        downloadLink: doc.downloadLink
+        yearIsLive: doc.yearIsLive
       }))
     }
   } catch (error) {
