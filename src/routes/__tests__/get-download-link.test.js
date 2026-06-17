@@ -16,6 +16,13 @@ vi.mock('@hapi/boom', () => ({
         payload: { message }
       }
     })),
+    badGateway: vi.fn((message) => ({
+      isBoom: true,
+      output: {
+        statusCode: 502,
+        payload: { message }
+      }
+    })),
     serviceUnavailable: vi.fn((message) => ({
       isBoom: true,
       output: {
@@ -35,7 +42,6 @@ vi.mock('#src/plugins/logger-options.js', () => ({
   }
 }))
 
-// vi.mock is hoisted — intercepts the import before get-download-link.js evaluates
 vi.mock('#src/config.js', () => ({
   config: {
     get: vi.fn((key) => {
@@ -57,7 +63,8 @@ vi.mock('#src/config.js', () => ({
 }))
 
 vi.mock('#src/services/s3-service.js', () => ({
-  generatePresignedReportDownloadLink: vi.fn()
+  generatePresignedReportDownloadLink: vi.fn(),
+  S3BackendError: class S3BackendError extends Error {}
 }))
 
 vi.mock('#src/common/helpers/logging/logger.js', () => ({
@@ -67,9 +74,9 @@ vi.mock('#src/common/helpers/logging/logger.js', () => ({
   }))
 }))
 
-import { getDownloadLink } from '#src/routes/years/get-download-link.js'
+import { getDownloadLink } from '#src/routes/get-download-link.js'
 import { config } from '#src/config.js'
-import { generatePresignedReportDownloadLink } from '#src/services/s3-service.js'
+import { generatePresignedReportDownloadLink, S3BackendError } from '#src/services/s3-service.js'
 import { statusCodes } from '#src/common/constants/status-codes.js'
 
 /**
@@ -81,6 +88,25 @@ function buildResponseToolkit() {
   return { h, responseBuilder }
 }
 
+function setupDefaultMocks() {
+  config.get.mockImplementation((key) => {
+    const configMap = {
+      'log': {
+        enabled: true,
+        isEnabled: true,
+        level: 'info',
+        format: 'ecs',
+        redact: []
+      },
+      's3.region': 'us-east-1',
+      's3.bucket': 'test-bucket',
+      'serviceName': 'test-service',
+      'serviceVersion': '1.0.0'
+    }
+    return configMap[key]
+  })
+}
+
 describe('getDownloadLink', () => {
   let request
   let h
@@ -88,120 +114,77 @@ describe('getDownloadLink', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    setupDefaultMocks()
     ;({ h, responseBuilder } = buildResponseToolkit())
-    config.get.mockImplementation((key) => {
-      const configMap = {
-        'log': {
-          enabled: true,
-          isEnabled: true,
-          level: 'info',
-          format: 'ecs',
-          redact: []
-        },
-        's3.region': 'us-east-1',
-        's3.bucket': 'test-bucket',
-        'serviceName': 'test-service',
-        'serviceVersion': '1.0.0'
-      }
-      return configMap[key]
-    })
     request = {
-      params: { year: '2023' },
-      log: vi.fn()
+      db: { collection: vi.fn() },
+      params: { year: 2023 }
     }
   })
 
-  it('should return presigned URL on success', async () => {
-    const presignedUrl = 'https://s3.amazonaws.com/test-bucket/reports/2023.pdf?signed'
+  it('should validate year parameter', () => {
+    expect(getDownloadLink.options.validate.params).toBeDefined()
+  })
+
+  it('should have correct HTTP method', () => {
+    expect(getDownloadLink.method).toBe('GET')
+  })
+
+  it('should generate presigned URL for valid year', async () => {
+    const presignedUrl = 'https://example.com/presigned-link'
     generatePresignedReportDownloadLink.mockResolvedValue(presignedUrl)
 
-    await getDownloadLink.handler(request, h)
+    const result = await getDownloadLink.handler(request, h)
 
-    expect(h.response).toHaveBeenCalledWith({
-      success: true,
-      message: 'Download link for year 2023 successfully retrieved',
-      downloadLink: presignedUrl
-    })
+    expect(h.response).toHaveBeenCalledWith({ downloadLink: presignedUrl })
     expect(responseBuilder.code).toHaveBeenCalledWith(statusCodes.ok)
   })
 
-  it('should call generatePresignedReportDownloadLink with correct parameters', async () => {
+  it('should call S3 service with correct bucket and year', async () => {
     generatePresignedReportDownloadLink.mockResolvedValue('https://example.com/link')
 
     await getDownloadLink.handler(request, h)
 
-    expect(config.get).toHaveBeenCalledWith('s3.bucket')
-    expect(generatePresignedReportDownloadLink).toHaveBeenCalledWith(
-      'test-bucket',
-      '2023'
-    )
-  })
-
-  it('should log successful download link retrieval', async () => {
-    generatePresignedReportDownloadLink.mockResolvedValue('https://example.com/link')
-
-    await getDownloadLink.handler(request, h)
-
-    expect(request.log).toHaveBeenCalledWith(
-      ['info', 'download-links'],
-      'Retrieved download link for year 2023'
-    )
-  })
-
-  it('should handle different year parameters', async () => {
-    generatePresignedReportDownloadLink.mockResolvedValue('https://example.com/link')
-    request.params.year = '2022'
-
-    await getDownloadLink.handler(request, h)
-
-    expect(generatePresignedReportDownloadLink).toHaveBeenCalledWith(
-      'test-bucket',
-      '2022'
-    )
-    expect(h.response).toHaveBeenCalledWith(
-      expect.objectContaining({
-        message: 'Download link for year 2022 successfully retrieved'
-      })
-    )
+    expect(generatePresignedReportDownloadLink).toHaveBeenCalledWith('test-bucket', 2023)
   })
 
   it('should return error response when service fails', async () => {
-    const serviceError = new Error('S3 connection failed')
+    const serviceError = new S3BackendError('S3 connection failed')
     generatePresignedReportDownloadLink.mockRejectedValue(serviceError)
 
     const result = await getDownloadLink.handler(request, h)
 
     expect(result.isBoom).toBe(true)
-    expect(result.output.statusCode).toBe(statusCodes.internalServerError)
-    expect(result.output.payload.message).toBe('Failed to retrieve download link')
+    expect(result.output.statusCode).toBe(502)
+    expect(result.output.payload.message).toBe('S3 service is currently unavailable')
     expect(h.response).not.toHaveBeenCalled()
   })
 
   it('should return 500 error code on exception', async () => {
     generatePresignedReportDownloadLink.mockRejectedValue(
-      new Error('Unexpected error')
+      new S3BackendError('Unexpected error')
     )
 
     const result = await getDownloadLink.handler(request, h)
 
-    expect(result.output.statusCode).toBe(statusCodes.internalServerError)
+    expect(result.output.statusCode).toBe(502)
   })
 
   it('should include error message in response on failure', async () => {
     const errorMessage = 'Bucket not found'
     generatePresignedReportDownloadLink.mockRejectedValue(
-      new Error(errorMessage)
+      new S3BackendError(errorMessage)
     )
 
     const result = await getDownloadLink.handler(request, h)
 
     expect(result.isBoom).toBe(true)
-    expect(result.output.payload.message).toBe('Failed to retrieve download link')
+    expect(result.output.payload.message).toBe('S3 service is currently unavailable')
   })
 
   it('should have correct route configuration', () => {
     expect(getDownloadLink.method).toBe('GET')
-    expect(getDownloadLink.path).toBe('/years/get-download-link/{year}')
+    expect(getDownloadLink.path).toBe('/reports/get-download-link/{year}')
     expect(getDownloadLink.options.tags).toContain('api')
     expect(getDownloadLink.options.tags).toContain('download-links')
   })

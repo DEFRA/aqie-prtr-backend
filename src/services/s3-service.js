@@ -61,9 +61,9 @@ export const countBucketObjects = async (bucketName, prefix = '') => {
 }
 
 /**
- * Generates a presigned download link for a PRTR dataset file
+ * Generates a presigned download link for a report for a specific year.
  * @param {string} bucketName - The name of the S3 bucket
- * @param {number} year - The year of the dataset to download
+ * @param {number} year - The year of the report to download
  * @returns {Promise<string>} - A presigned URL for downloading the file
  */
 export const generatePresignedReportDownloadLink = async (

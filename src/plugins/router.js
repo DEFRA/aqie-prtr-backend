@@ -1,7 +1,7 @@
 import { health } from '#src/routes/health.js'
 import { locations } from '#src/routes/locations.js'
-import { getYears } from '../routes/years/get-years.js'
-import { getDownloadLink } from '#src/routes/years/get-download-link.js'
+import { getReports } from '#src/routes/get-reports.js'
+import { getDownloadLink } from '#src/routes/get-download-link.js'
 
 export const router = {
   plugin: {
@@ -10,7 +10,7 @@ export const router = {
       server.route([
         health,
         ...locations,
-        getYears,
+        getReports,
         getDownloadLink
       ])
     }

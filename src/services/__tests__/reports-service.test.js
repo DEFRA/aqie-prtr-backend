@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { getYears } from '#src/services/years-service.js'
+import { getReports } from '#src/services/reports-service.js'
 
-describe('getYears', () => {
+describe('getReports', () => {
   let mockDb
   let mockLogger
   let mockCollection
@@ -21,42 +21,41 @@ describe('getYears', () => {
     }
   })
 
-  it('returns success with years sorted by year descending', async () => {
-    const yearsData = [
-      { yearID: '2023', year: 2023, yearIsLive: true },
-      { yearID: '2022', year: 2022, yearIsLive: false },
-      { yearID: '2021', year: 2021, yearIsLive: false }
+  it('returns success with reports sorted by year descending', async () => {
+    const reportsData = [
+      { reportID: '2023', year: 2023, reportIsLive: true },
+      { reportID: '2022', year: 2022, reportIsLive: false },
+      { reportID: '2021', year: 2021, reportIsLive: false }
     ]
 
     mockCollection.find.mockReturnValue({
       sort: vi.fn().mockReturnValue({
-        toArray: vi.fn().mockResolvedValue(yearsData)
+        toArray: vi.fn().mockResolvedValue(reportsData)
       })
     })
 
-    const result = await getYears(mockDb, mockLogger)
+    const result = await getReports(mockDb, mockLogger)
 
     expect(result).toMatchObject({
-      success: true,
       count: 3,
-      years: [
-        { id: '2023', year: 2023, yearIsLive: true },
-        { id: '2022', year: 2022, yearIsLive: false },
-        { id: '2021', year: 2021, yearIsLive: false }
+      results: [
+        { id: '2023', year: 2023, reportIsLive: true },
+        { id: '2022', year: 2022, reportIsLive: false },
+        { id: '2021', year: 2021, reportIsLive: false }
       ]
     })
   })
 
-  it('calls Years collection with find({})', async () => {
+  it('calls Reports collection with find({})', async () => {
     mockCollection.find.mockReturnValue({
       sort: vi.fn().mockReturnValue({
         toArray: vi.fn().mockResolvedValue([])
       })
     })
 
-    await getYears(mockDb, mockLogger)
+    await getReports(mockDb, mockLogger)
 
-    expect(mockDb.collection).toHaveBeenCalledWith('Years')
+    expect(mockDb.collection).toHaveBeenCalledWith('Reports')
     expect(mockCollection.find).toHaveBeenCalledWith({})
   })
 
@@ -66,42 +65,41 @@ describe('getYears', () => {
     })
     mockCollection.find.mockReturnValue({ sort: sortMock })
 
-    await getYears(mockDb, mockLogger)
+    await getReports(mockDb, mockLogger)
 
     expect(sortMock).toHaveBeenCalledWith({ year: -1 })
   })
 
-  it('returns empty array when no years are found', async () => {
+  it('returns empty array when no reports are found', async () => {
     mockCollection.find.mockReturnValue({
       sort: vi.fn().mockReturnValue({
         toArray: vi.fn().mockResolvedValue([])
       })
     })
 
-    const result = await getYears(mockDb, mockLogger)
+    const result = await getReports(mockDb, mockLogger)
 
     expect(result).toMatchObject({
-      success: true,
       count: 0,
-      years: []
+      results: []
     })
   })
 
-  it('maps yearID to id in response', async () => {
-    const yearsData = [
-      { yearID: '2023', year: 2023, yearIsLive: true }
+  it('maps reportID to id in response', async () => {
+    const reportsData = [
+      { reportID: '2023', year: 2023, reportIsLive: true }
     ]
 
     mockCollection.find.mockReturnValue({
       sort: vi.fn().mockReturnValue({
-        toArray: vi.fn().mockResolvedValue(yearsData)
+        toArray: vi.fn().mockResolvedValue(reportsData)
       })
     })
 
-    const result = await getYears(mockDb, mockLogger)
+    const result = await getReports(mockDb, mockLogger)
 
-    expect(result.years[0]).toHaveProperty('id', '2023')
-    expect(result.years[0]).not.toHaveProperty('yearID')
+    expect(result.results[0]).toHaveProperty('id', '2023')
+    expect(result.results[0]).not.toHaveProperty('reportID')
   })
 
   it('throws error when database query fails', async () => {
@@ -112,13 +110,13 @@ describe('getYears', () => {
       })
     })
 
-    await expect(getYears(mockDb, mockLogger)).rejects.toThrow(
+    await expect(getReports(mockDb, mockLogger)).rejects.toThrow(
       'Database connection failed'
     )
 
     expect(mockLogger.error).toHaveBeenCalledWith(
       dbError,
-      'Failed to fetch years'
+      'Failed to fetch reports'
     )
   })
 
@@ -128,13 +126,13 @@ describe('getYears', () => {
       throw collectionError
     })
 
-    await expect(getYears(mockDb, mockLogger)).rejects.toThrow(
+    await expect(getReports(mockDb, mockLogger)).rejects.toThrow(
       'Collection not found'
     )
 
     expect(mockLogger.error).toHaveBeenCalledWith(
       collectionError,
-      'Failed to fetch years'
+      'Failed to fetch reports'
     )
   })
 })

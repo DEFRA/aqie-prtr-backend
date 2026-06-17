@@ -1,5 +1,5 @@
 /**
- * Get presigned download link for a specific year's PRTR dataset
+ * Get presigned download link for the report for a specific year
  */
 
 import Boom from '@hapi/boom'
@@ -23,11 +23,11 @@ const paramsSchema = Joi.object({
     .min(MIN_YEAR)
     .max(new Date().getFullYear())
     .required()
-    .description('Year of the PRTR dataset to download')
+    .description('Year of the report to download')
 })
 
 /**
- * Generate a presigned download link for a PRTR dataset for a specific year.
+ * Generate a presigned download link for a report for a specific year.
  * Maps S3 service failures to a clean 502 response.
  *
  * @param {import('@hapi/hapi').Request} request
@@ -65,10 +65,10 @@ export async function handleGetDownloadLink(request, h) {
 
 export const getDownloadLink = {
   method: 'GET',
-  path: '/years/get-download-link/{year}',
+  path: '/reports/get-download-link/{year}',
   options: {
     tags: ['api', 'download-links'],
-    description: 'Get a presigned download link for a specific year PRTR dataset',
+    description: 'Get a presigned download link for a report for a specific year',
     validate: { params: paramsSchema }
   },
   handler: handleGetDownloadLink
