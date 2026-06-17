@@ -137,7 +137,7 @@ describe('getDownloadLink', () => {
     const presignedUrl = 'https://example.com/presigned-link'
     generatePresignedReportDownloadLink.mockResolvedValue(presignedUrl)
 
-    const result = await getDownloadLink.handler(request, h)
+    await getDownloadLink.handler(request, h)
 
     expect(h.response).toHaveBeenCalledWith({ downloadLink: presignedUrl })
     expect(responseBuilder.code).toHaveBeenCalledWith(statusCodes.ok)

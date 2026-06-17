@@ -129,7 +129,7 @@ describe('getReports route', () => {
       results: []
     })
 
-    const result = await getReports.handler(request, h)
+    await getReports.handler(request, h)
 
     expect(mockGetReportsController).toHaveBeenCalledWith(null, mockLogger)
   })
