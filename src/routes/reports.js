@@ -8,7 +8,7 @@ import Joi from 'joi'
 import { config } from '#src/config.js'
 import { createLogger } from '#src/common/helpers/logging/logger.js'
 import {
-  getReports as getReportsController,
+  getReports,
   ReportsBackendError
 } from '#src/services/reports-service.js'
 import {
@@ -50,7 +50,7 @@ export async function handleGetReports(request, h) {
     )
 
     // Fetch reports from database
-    const result = await getReportsController(request.db, logger)
+    const result = await getReports(request.db, logger)
     logger.info(`[get-reports.search] succeeded, count=${result.count}`)
     return h.response(result).code(statusCodes.ok)
   } catch (error) {

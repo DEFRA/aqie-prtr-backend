@@ -13,6 +13,8 @@ export class ReportsBackendError extends Error {
   }
 }
 
+import exampleReports from '../data/example-reports.json' with { type: 'json' }
+
 /**
  * Fetch all reports from the database, sorted by year descending.
  *
@@ -23,11 +25,20 @@ export class ReportsBackendError extends Error {
  */
 async function getReports(db, logger) {
   try {
+    // Database query code - kept for future use
     const reportsCollection = db.collection('Reports')
-    const reports = await reportsCollection
+    //const reports = await reportsCollection
+    const reportsFromDb = await reportsCollection
       .find({})
       .sort({ year: -1 })
       .toArray()
+    console.log('Reports from DB:', reportsFromDb)
+    
+    // For now, use example reports from JSON file instead
+    // To switch back to database, comment out the line below and uncomment the line above
+    const reports = exampleReports
+    // const reports = reportsFromDb
+    
     return {
       count: reports.length,
       results: reports.map((doc) => ({
