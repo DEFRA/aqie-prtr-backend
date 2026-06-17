@@ -2,9 +2,14 @@
  * Get download links for year
  */
 
+import Boom from '@hapi/boom'
+
 import { config } from '#src/config.js'
 import { statusCodes } from '#src/common/constants/status-codes.js'
+import { createLogger } from '#src/common/helpers/logging/logger.js'
 import { generatePresignedReportDownloadLink } from '#src/services/s3-service.js'
+
+const logger = createLogger()
 
 export const getDownloadLink = {
   method: 'GET',
@@ -36,13 +41,10 @@ export const getDownloadLink = {
         })
         .code(statusCodes.ok)
     } catch (error) {
-      return h
-        .response({
-          success: false,
-          message: `Failed to retrieve download link for year ${year}`,
-          error: error.message
-        })
-        .code(statusCodes.internalServerError)
+      logger.error(
+        `[get-download-link] failed to retrieve download link for year ${year}: ${error.message}`
+      )
+      return Boom.internalServerError('Failed to retrieve download link')
     }
   }
 }
