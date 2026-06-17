@@ -35,15 +35,11 @@ export async function handleGetReports(request, h) {
 
     // Fetch reports from database
     const result = await getReportsController(request.db, logger)
-    logger.info(
-      `[get-reports.search] succeeded, count=${result.count}`
-    )
+    logger.info(`[get-reports.search] succeeded, count=${result.count}`)
     return h.response(result).code(statusCodes.ok)
   } catch (error) {
     if (error instanceof S3BackendError) {
-      logger.error(
-        `[get-reports.search] S3 backend failed: ${error.message}`
-      )
+      logger.error(`[get-reports.search] S3 backend failed: ${error.message}`)
       return Boom.badGateway('S3 service is currently unavailable')
     }
     if (error instanceof ReportsBackendError) {
@@ -52,9 +48,7 @@ export async function handleGetReports(request, h) {
       )
       return Boom.badGateway('Reports service is currently unavailable')
     }
-    logger.error(
-      `[get-reports.search] unexpected error: ${error.message}`
-    )
+    logger.error(`[get-reports.search] unexpected error: ${error.message}`)
     throw error
   }
 }
@@ -64,7 +58,8 @@ export const getReports = {
   path: '/reports',
   options: {
     tags: ['api', 'reports'],
-    description: 'Verifies S3 connection health, then retrieves all reports from the database',
+    description:
+      'Verifies S3 connection health, then retrieves all reports from the database'
   },
   handler: handleGetReports
 }

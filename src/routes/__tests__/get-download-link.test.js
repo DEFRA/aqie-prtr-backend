@@ -46,7 +46,7 @@ vi.mock('#src/config.js', () => ({
   config: {
     get: vi.fn((key) => {
       const configMap = {
-        'log': {
+        log: {
           enabled: true,
           isEnabled: true,
           level: 'info',
@@ -54,8 +54,8 @@ vi.mock('#src/config.js', () => ({
           redact: []
         },
         's3.region': 'us-east-1',
-        'serviceName': 'test-service',
-        'serviceVersion': '1.0.0'
+        serviceName: 'test-service',
+        serviceVersion: '1.0.0'
       }
       return configMap[key]
     })
@@ -76,7 +76,10 @@ vi.mock('#src/common/helpers/logging/logger.js', () => ({
 
 import { getDownloadLink } from '#src/routes/get-download-link.js'
 import { config } from '#src/config.js'
-import { generatePresignedReportDownloadLink, S3BackendError } from '#src/services/s3-service.js'
+import {
+  generatePresignedReportDownloadLink,
+  S3BackendError
+} from '#src/services/s3-service.js'
 import { statusCodes } from '#src/common/constants/status-codes.js'
 
 /**
@@ -91,7 +94,7 @@ function buildResponseToolkit() {
 function setupDefaultMocks() {
   config.get.mockImplementation((key) => {
     const configMap = {
-      'log': {
+      log: {
         enabled: true,
         isEnabled: true,
         level: 'info',
@@ -100,8 +103,8 @@ function setupDefaultMocks() {
       },
       's3.region': 'us-east-1',
       's3.bucket': 'test-bucket',
-      'serviceName': 'test-service',
-      'serviceVersion': '1.0.0'
+      serviceName: 'test-service',
+      serviceVersion: '1.0.0'
     }
     return configMap[key]
   })
@@ -141,11 +144,16 @@ describe('getDownloadLink', () => {
   })
 
   it('should call S3 service with correct bucket and year', async () => {
-    generatePresignedReportDownloadLink.mockResolvedValue('https://example.com/link')
+    generatePresignedReportDownloadLink.mockResolvedValue(
+      'https://example.com/link'
+    )
 
     await getDownloadLink.handler(request, h)
 
-    expect(generatePresignedReportDownloadLink).toHaveBeenCalledWith('test-bucket', 2023)
+    expect(generatePresignedReportDownloadLink).toHaveBeenCalledWith(
+      'test-bucket',
+      2023
+    )
   })
 
   it('should return error response when service fails', async () => {
@@ -156,7 +164,9 @@ describe('getDownloadLink', () => {
 
     expect(result.isBoom).toBe(true)
     expect(result.output.statusCode).toBe(502)
-    expect(result.output.payload.message).toBe('S3 service is currently unavailable')
+    expect(result.output.payload.message).toBe(
+      'S3 service is currently unavailable'
+    )
     expect(h.response).not.toHaveBeenCalled()
   })
 
@@ -179,7 +189,9 @@ describe('getDownloadLink', () => {
     const result = await getDownloadLink.handler(request, h)
 
     expect(result.isBoom).toBe(true)
-    expect(result.output.payload.message).toBe('S3 service is currently unavailable')
+    expect(result.output.payload.message).toBe(
+      'S3 service is currently unavailable'
+    )
   })
 
   it('should have correct route configuration', () => {

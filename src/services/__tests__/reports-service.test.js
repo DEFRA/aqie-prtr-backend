@@ -86,9 +86,7 @@ describe('getReports', () => {
   })
 
   it('maps reportID to id in response', async () => {
-    const reportsData = [
-      { reportID: '2023', year: 2023, reportIsLive: true }
-    ]
+    const reportsData = [{ reportID: '2023', year: 2023, reportIsLive: true }]
 
     mockCollection.find.mockReturnValue({
       sort: vi.fn().mockReturnValue({

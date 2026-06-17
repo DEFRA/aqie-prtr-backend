@@ -53,10 +53,9 @@ export const countBucketObjects = async (bucketName, prefix = '') => {
     return response.KeyCount ?? 0
   } catch (error) {
     logger.error(error, 'Failed to count S3 objects')
-    throw new S3BackendError(
-      `Failed to count S3 objects: ${error.message}`,
-      { cause: error }
-    )
+    throw new S3BackendError(`Failed to count S3 objects: ${error.message}`, {
+      cause: error
+    })
   }
 }
 
@@ -66,10 +65,7 @@ export const countBucketObjects = async (bucketName, prefix = '') => {
  * @param {number} year - The year of the report to download
  * @returns {Promise<string>} - A presigned URL for downloading the file
  */
-export const generatePresignedReportDownloadLink = async (
-  bucketName,
-  year
-) => {
+export const generatePresignedReportDownloadLink = async (bucketName, year) => {
   try {
     const fileKey = `reports/uk_prtr_dataset_${year}.xml`
 

@@ -1,14 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 // Create mock functions that will be shared
-const { mockCountBucketObjects, mockGetReportsController, mockLogger } = vi.hoisted(() => ({
-  mockCountBucketObjects: vi.fn(),
-  mockGetReportsController: vi.fn(),
-  mockLogger: {
-    error: vi.fn(),
-    info: vi.fn()
-  }
-}))
+const { mockCountBucketObjects, mockGetReportsController, mockLogger } =
+  vi.hoisted(() => ({
+    mockCountBucketObjects: vi.fn(),
+    mockGetReportsController: vi.fn(),
+    mockLogger: {
+      error: vi.fn(),
+      info: vi.fn()
+    }
+  }))
 
 vi.mock('@hapi/boom', () => ({
   default: {
@@ -143,7 +144,10 @@ describe('getReports route', () => {
     await getReports.handler(request, h)
 
     expect(config.get).toHaveBeenCalledWith('s3.bucket')
-    expect(mockCountBucketObjects).toHaveBeenCalledWith('test-bucket', 'reports/')
+    expect(mockCountBucketObjects).toHaveBeenCalledWith(
+      'test-bucket',
+      'reports/'
+    )
   })
 
   it('should log S3 connection success with file count', async () => {
@@ -168,7 +172,9 @@ describe('getReports route', () => {
 
     expect(result.isBoom).toBe(true)
     expect(result.output.statusCode).toBe(502)
-    expect(result.output.payload.message).toBe('S3 service is currently unavailable')
+    expect(result.output.payload.message).toBe(
+      'S3 service is currently unavailable'
+    )
     expect(h.response).not.toHaveBeenCalled()
   })
 
@@ -185,14 +191,15 @@ describe('getReports route', () => {
     mockCountBucketObjects.mockResolvedValue(5)
     mockGetReportsController.mockResolvedValue({
       count: 2,
-      results: [
-        { id: '2023', year: 2023, reportIsLive: true }
-      ]
+      results: [{ id: '2023', year: 2023, reportIsLive: true }]
     })
 
     await getReports.handler(request, h)
 
-    expect(mockGetReportsController).toHaveBeenCalledWith(request.db, mockLogger)
+    expect(mockGetReportsController).toHaveBeenCalledWith(
+      request.db,
+      mockLogger
+    )
   })
 
   it('should return controller result on success', async () => {
@@ -257,7 +264,10 @@ describe('getReports route', () => {
 
     await getReports.handler(request, h)
 
-    expect(mockCountBucketObjects).toHaveBeenCalledWith('production-bucket', 'reports/')
+    expect(mockCountBucketObjects).toHaveBeenCalledWith(
+      'production-bucket',
+      'reports/'
+    )
   })
 
   it('should have correct route configuration', () => {

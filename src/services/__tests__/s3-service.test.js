@@ -1,7 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 // Create mock instances that will be shared - hoisted above mocks
-const { mockS3ClientInstance, mockListObjectsCommand, mockGetObjectCommand, mockGetSignedUrl } = vi.hoisted(() => ({
+const {
+  mockS3ClientInstance,
+  mockListObjectsCommand,
+  mockGetObjectCommand,
+  mockGetSignedUrl
+} = vi.hoisted(() => ({
   mockS3ClientInstance: {
     send: vi.fn()
   },
@@ -122,10 +127,14 @@ describe('generatePresignedReportDownloadLink', () => {
   })
 
   it('generates presigned URL with correct expiry', async () => {
-    const expectedUrl = 'https://s3.amazonaws.com/bucket/reports/uk_prtr_dataset_2023.xml?signed'
+    const expectedUrl =
+      'https://s3.amazonaws.com/bucket/reports/uk_prtr_dataset_2023.xml?signed'
     mockGetSignedUrl.mockResolvedValue(expectedUrl)
 
-    const result = await generatePresignedReportDownloadLink('test-bucket', 2023)
+    const result = await generatePresignedReportDownloadLink(
+      'test-bucket',
+      2023
+    )
 
     expect(result).toBe(expectedUrl)
     expect(mockGetSignedUrl).toHaveBeenCalledWith(

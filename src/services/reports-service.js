@@ -24,7 +24,10 @@ export class ReportsBackendError extends Error {
 async function getReports(db, logger) {
   try {
     const reportsCollection = db.collection('Reports')
-    const reports = await reportsCollection.find({}).sort({ year: -1 }).toArray()
+    const reports = await reportsCollection
+      .find({})
+      .sort({ year: -1 })
+      .toArray()
     return {
       count: reports.length,
       results: reports.map((doc) => ({
@@ -35,10 +38,9 @@ async function getReports(db, logger) {
     }
   } catch (error) {
     logger.error(error, 'Failed to fetch reports')
-    throw new ReportsBackendError(
-      `Failed to fetch reports: ${error.message}`,
-      { cause: error }
-    )
+    throw new ReportsBackendError(`Failed to fetch reports: ${error.message}`, {
+      cause: error
+    })
   }
 }
 

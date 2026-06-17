@@ -41,9 +41,7 @@ export async function handleGetDownloadLink(request, h) {
       config.get('s3.bucket'),
       year
     )
-    logger.info(
-      `[get-download-link.search] succeeded for year=${year}`
-    )
+    logger.info(`[get-download-link.search] succeeded for year=${year}`)
     return h
       .response({
         downloadLink: presignedUrl
@@ -68,7 +66,8 @@ export const getDownloadLink = {
   path: '/reports/get-download-link/{year}',
   options: {
     tags: ['api', 'download-links'],
-    description: 'Get a presigned download link for a report for a specific year',
+    description:
+      'Get a presigned download link for a report for a specific year',
     validate: { params: paramsSchema }
   },
   handler: handleGetDownloadLink
