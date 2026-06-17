@@ -11,6 +11,21 @@ import { createLogger } from '#src/common/helpers/logging/logger.js'
 
 const logger = createLogger()
 
+/**
+ * Thrown when S3 operations fail (network, invalid credentials, bucket not found, etc).
+ * Lets routes map failures to appropriate HTTP status codes.
+ */
+export class S3BackendError extends Error {
+  constructor(message, { status, cause } = {}) {
+    super(message)
+    this.name = 'S3ServiceError'
+    this.status = status ?? null
+    if (cause) {
+      this.cause = cause
+    }
+  }
+}
+
 // Constants
 const PRESIGNED_URL_EXPIRY_SECONDS = 9000 // 150 minutes
 
@@ -38,7 +53,10 @@ export const countBucketObjects = async (bucketName, prefix = '') => {
     return response.KeyCount ?? 0
   } catch (error) {
     logger.error(error, 'Failed to count S3 objects')
-    throw new Error(`Failed to count S3 objects: ${error.message}`)
+    throw new S3BackendError(
+      `Failed to count S3 objects: ${error.message}`,
+      { cause: error }
+    )
   }
 }
 
@@ -71,6 +89,9 @@ export const generatePresignedReportDownloadLink = async (
     return presignedUrl
   } catch (error) {
     logger.error(error, 'Failed to generate S3 download link')
-    throw new Error(`Failed to generate S3 download link: ${error.message}`)
+    throw new S3BackendError(
+      `Failed to generate S3 download link: ${error.message}`,
+      { cause: error }
+    )
   }
 }

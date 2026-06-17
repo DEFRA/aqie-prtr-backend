@@ -1,50 +1,75 @@
 /**
- * Get download links for year
+ * Get presigned download link for a specific year's PRTR dataset
  */
 
 import Boom from '@hapi/boom'
+import Joi from 'joi'
 
 import { config } from '#src/config.js'
-import { statusCodes } from '#src/common/constants/status-codes.js'
 import { createLogger } from '#src/common/helpers/logging/logger.js'
-import { generatePresignedReportDownloadLink } from '#src/services/s3-service.js'
+import {
+  generatePresignedReportDownloadLink,
+  S3BackendError
+} from '#src/services/s3-service.js'
+import { statusCodes } from '#src/common/constants/status-codes.js'
 
 const logger = createLogger()
+
+const MIN_YEAR = 2007
+
+const paramsSchema = Joi.object({
+  year: Joi.number()
+    .integer()
+    .min(MIN_YEAR)
+    .max(new Date().getFullYear())
+    .required()
+    .description('Year of the PRTR dataset to download')
+})
+
+/**
+ * Generate a presigned download link for a PRTR dataset for a specific year.
+ * Maps S3 service failures to a clean 502 response.
+ *
+ * @param {import('@hapi/hapi').Request} request
+ * @param {import('@hapi/hapi').ResponseToolkit} h
+ */
+export async function handleGetDownloadLink(request, h) {
+  const { year } = request.params
+
+  try {
+    const presignedUrl = await generatePresignedReportDownloadLink(
+      config.get('s3.bucket'),
+      year
+    )
+    logger.info(
+      `[get-download-link.search] succeeded for year=${year}`
+    )
+    return h
+      .response({
+        downloadLink: presignedUrl
+      })
+      .code(statusCodes.ok)
+  } catch (error) {
+    if (error instanceof S3BackendError) {
+      logger.error(
+        `[get-download-link.search] S3 backend failed for year=${year}: ${error.message}`
+      )
+      return Boom.badGateway('S3 service is currently unavailable')
+    }
+    logger.error(
+      `[get-download-link.search] unexpected error for year=${year}: ${error.message}`
+    )
+    throw error
+  }
+}
 
 export const getDownloadLink = {
   method: 'GET',
   path: '/years/get-download-link/{year}',
   options: {
     tags: ['api', 'download-links'],
-    description: 'Get download link for a specific year',
-    notes: 'Get download link for a specific year'
+    description: 'Get a presigned download link for a specific year PRTR dataset',
+    validate: { params: paramsSchema }
   },
-  handler: async (request, h) => {
-    const { year } = request.params
-
-    try {
-      const presignedUrl = await generatePresignedReportDownloadLink(
-        config.get('s3.bucket'),
-        year
-      )
-
-      request.log(
-        ['info', 'download-links'],
-        `Retrieved download link for year ${year}`
-      )
-
-      return h
-        .response({
-          success: true,
-          message: `Download link for year ${year} successfully retrieved`,
-          downloadLink: presignedUrl
-        })
-        .code(statusCodes.ok)
-    } catch (error) {
-      logger.error(
-        `[get-download-link] failed to retrieve download link for year ${year}: ${error.message}`
-      )
-      return Boom.internalServerError('Failed to retrieve download link')
-    }
-  }
+  handler: handleGetDownloadLink
 }
