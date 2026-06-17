@@ -31,9 +31,21 @@ describe('getReports', () => {
     const result = await getReports(mockDb, mockLogger)
 
     expect(result.count).toBe(18)
-    expect(result.results[0]).toEqual({ id: '2024', year: 2024, reportIsLive: true })
-    expect(result.results[1]).toEqual({ id: '2023', year: 2023, reportIsLive: true })
-    expect(result.results[result.results.length - 1]).toEqual({ id: '2007', year: 2007, reportIsLive: false })
+    expect(result.results[0]).toEqual({
+      id: '2024',
+      year: 2024,
+      reportIsLive: true
+    })
+    expect(result.results[1]).toEqual({
+      id: '2023',
+      year: 2023,
+      reportIsLive: true
+    })
+    expect(result.results[result.results.length - 1]).toEqual({
+      id: '2007',
+      year: 2007,
+      reportIsLive: false
+    })
   })
 
   it('calls Reports collection with find({})', async () => {

@@ -33,12 +33,12 @@ async function getReports(db, logger) {
       .sort({ year: -1 })
       .toArray()
     console.log('Reports from DB:', reportsFromDb)
-    
+
     // For now, use example reports from JSON file instead
     // To switch back to database, comment out the line below and uncomment the line above
     const reports = exampleReports
     // const reports = reportsFromDb
-    
+
     return {
       count: reports.length,
       results: reports.map((doc) => ({
