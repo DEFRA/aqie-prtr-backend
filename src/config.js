@@ -116,13 +116,13 @@ export const config = convict({
     bucket: {
       doc: 'S3 bucket name for file (xmls) storage',
       format: String,
-      default: 'dev-aqie-prtr-backend-c63f2',
+      default: '',
       env: 'S3_BUCKET'
     },
     region: {
       doc: 'AWS region for S3 bucket',
       format: String,
-      default: 'eu-west-2',
+      default: '',
       env: 'AWS_REGION'
     }
   },
