@@ -1,3 +1,4 @@
+import exampleReports from '../data/example-reports.json'
 /**
  * Thrown when database operations fail (connection, invalid query, etc).
  * Lets routes map failures to appropriate HTTP status codes.
@@ -5,15 +6,13 @@
 export class ReportsBackendError extends Error {
   constructor(message, { status, cause } = {}) {
     super(message)
-    this.name = 'ReportsServiceError'
+    this.name = 'ReportsBackendError'
     this.status = status ?? null
     if (cause) {
       this.cause = cause
     }
   }
 }
-
-import exampleReports from '../data/example-reports.json' with { type: 'json' }
 
 /**
  * Fetch all reports from the database, sorted by year descending.
