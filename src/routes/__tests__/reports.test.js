@@ -1,15 +1,20 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 // Create mock functions that will be shared
-const { mockCountBucketObjects, mockGetReportsController, mockLogger } =
-  vi.hoisted(() => ({
-    mockCountBucketObjects: vi.fn(),
-    mockGetReportsController: vi.fn(),
-    mockLogger: {
-      error: vi.fn(),
-      info: vi.fn()
-    }
-  }))
+const {
+  mockCountBucketObjects,
+  mockGetReportsController,
+  mockGeneratePresignedReportDownloadLink,
+  mockLogger
+} = vi.hoisted(() => ({
+  mockCountBucketObjects: vi.fn(),
+  mockGetReportsController: vi.fn(),
+  mockGeneratePresignedReportDownloadLink: vi.fn(),
+  mockLogger: {
+    error: vi.fn(),
+    info: vi.fn()
+  }
+}))
 
 vi.mock('@hapi/boom', () => ({
   default: {
@@ -71,6 +76,7 @@ vi.mock('#src/common/helpers/logging/logger.js', () => ({
 
 vi.mock('#src/services/s3-service.js', () => ({
   countBucketObjects: mockCountBucketObjects,
+  generatePresignedReportDownloadLink: mockGeneratePresignedReportDownloadLink,
   S3BackendError: class S3BackendError extends Error {}
 }))
 
@@ -79,10 +85,12 @@ vi.mock('#src/services/reports-service.js', () => ({
   ReportsBackendError: class ReportsBackendError extends Error {}
 }))
 
-import { getReports } from '#src/routes/get-reports.js'
+import { reports } from '#src/routes/reports.js'
 import { S3BackendError } from '#src/services/s3-service.js'
 import { config } from '#src/config.js'
 import { statusCodes } from '#src/common/constants/status-codes.js'
+
+const [getReports, getDownloadLink] = reports
 
 /**
  * Minimal ResponseToolkit mock supporting the `.response(payload).code(status)` chain.
@@ -320,5 +328,97 @@ describe('getReports route', () => {
 
     expect(result.isBoom).toBe(true)
     expect(result.output.statusCode).toBe(502)
+  })
+})
+
+describe('downloadLink', () => {
+  let request
+  let h
+  let responseBuilder
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setupDefaultMocks()
+    ;({ h, responseBuilder } = buildResponseToolkit())
+    request = {
+      db: { collection: vi.fn() },
+      params: { year: 2023 }
+    }
+  })
+
+  it('should validate year parameter', () => {
+    expect(getDownloadLink.options.validate.params).toBeDefined()
+  })
+
+  it('should have correct HTTP method', () => {
+    expect(getDownloadLink.method).toBe('GET')
+  })
+
+  it('should generate presigned URL for valid year', async () => {
+    const presignedUrl = 'https://example.com/presigned-link'
+    mockGeneratePresignedReportDownloadLink.mockResolvedValue(presignedUrl)
+
+    await getDownloadLink.handler(request, h)
+
+    expect(h.response).toHaveBeenCalledWith({ downloadLink: presignedUrl })
+    expect(responseBuilder.code).toHaveBeenCalledWith(statusCodes.ok)
+  })
+
+  it('should call S3 service with correct bucket and year', async () => {
+    mockGeneratePresignedReportDownloadLink.mockResolvedValue(
+      'https://example.com/link'
+    )
+
+    await getDownloadLink.handler(request, h)
+
+    expect(mockGeneratePresignedReportDownloadLink).toHaveBeenCalledWith(
+      'test-bucket',
+      2023
+    )
+  })
+
+  it('should return error response when service fails', async () => {
+    const serviceError = new S3BackendError('S3 connection failed')
+    mockGeneratePresignedReportDownloadLink.mockRejectedValue(serviceError)
+
+    const result = await getDownloadLink.handler(request, h)
+
+    expect(result.isBoom).toBe(true)
+    expect(result.output.statusCode).toBe(502)
+    expect(result.output.payload.message).toBe(
+      'S3 service is currently unavailable'
+    )
+    expect(h.response).not.toHaveBeenCalled()
+  })
+
+  it('should return 500 error code on exception', async () => {
+    mockGeneratePresignedReportDownloadLink.mockRejectedValue(
+      new S3BackendError('Unexpected error')
+    )
+
+    const result = await getDownloadLink.handler(request, h)
+
+    expect(result.output.statusCode).toBe(502)
+  })
+
+  it('should include error message in response on failure', async () => {
+    const errorMessage = 'Bucket not found'
+    mockGeneratePresignedReportDownloadLink.mockRejectedValue(
+      new S3BackendError(errorMessage)
+    )
+
+    const result = await getDownloadLink.handler(request, h)
+
+    expect(result.isBoom).toBe(true)
+    expect(result.output.payload.message).toBe(
+      'S3 service is currently unavailable'
+    )
+  })
+
+  it('should have correct route configuration', () => {
+    expect(getDownloadLink.method).toBe('GET')
+    expect(getDownloadLink.path).toBe('/reports/get-download-link/{year}')
+    expect(getDownloadLink.options.tags).toContain('api')
+    expect(getDownloadLink.options.tags).toContain('download-links')
   })
 })
