@@ -17,7 +17,7 @@ const PRESIGNED_URL_EXPIRY_SECONDS = 9000 // 150 minutes
 // Initialize the S3 Client.
 // it will automatically inherit permissions from the IAM Task Role.
 const s3Client = new S3Client({
-  region: config.get('s3.region')
+  region: config.get('s3.region') || 'us-east-1'
 })
 
 /**

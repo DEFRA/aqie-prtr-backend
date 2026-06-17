@@ -1,14 +1,70 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
+vi.mock('@hapi/boom', () => ({
+  default: {
+    internal: vi.fn((message) => ({
+      isBoom: true,
+      output: {
+        statusCode: 500,
+        payload: { message }
+      }
+    })),
+    internalServerError: vi.fn((message) => ({
+      isBoom: true,
+      output: {
+        statusCode: 500,
+        payload: { message }
+      }
+    })),
+    serviceUnavailable: vi.fn((message) => ({
+      isBoom: true,
+      output: {
+        statusCode: 503,
+        payload: { message }
+      }
+    }))
+  }
+}))
+
+vi.mock('#src/plugins/logger-options.js', () => ({
+  loggerOptions: {
+    enabled: true,
+    level: 'info',
+    ignorePaths: ['/health'],
+    redact: { paths: [], remove: true }
+  }
+}))
+
 // vi.mock is hoisted — intercepts the import before get-download-link.js evaluates
 vi.mock('#src/config.js', () => ({
   config: {
-    get: vi.fn()
+    get: vi.fn((key) => {
+      const configMap = {
+        'log': {
+          enabled: true,
+          isEnabled: true,
+          level: 'info',
+          format: 'ecs',
+          redact: []
+        },
+        's3.region': 'us-east-1',
+        'serviceName': 'test-service',
+        'serviceVersion': '1.0.0'
+      }
+      return configMap[key]
+    })
   }
 }))
 
 vi.mock('#src/services/s3-service.js', () => ({
   generatePresignedReportDownloadLink: vi.fn()
+}))
+
+vi.mock('#src/common/helpers/logging/logger.js', () => ({
+  createLogger: vi.fn(() => ({
+    error: vi.fn(),
+    info: vi.fn()
+  }))
 }))
 
 import { getDownloadLink } from '#src/routes/years/get-download-link.js'
@@ -33,7 +89,22 @@ describe('getDownloadLink', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     ;({ h, responseBuilder } = buildResponseToolkit())
-    config.get.mockReturnValue('test-bucket')
+    config.get.mockImplementation((key) => {
+      const configMap = {
+        'log': {
+          enabled: true,
+          isEnabled: true,
+          level: 'info',
+          format: 'ecs',
+          redact: []
+        },
+        's3.region': 'us-east-1',
+        's3.bucket': 'test-bucket',
+        'serviceName': 'test-service',
+        'serviceVersion': '1.0.0'
+      }
+      return configMap[key]
+    })
     request = {
       params: { year: '2023' },
       log: vi.fn()
@@ -98,14 +169,12 @@ describe('getDownloadLink', () => {
     const serviceError = new Error('S3 connection failed')
     generatePresignedReportDownloadLink.mockRejectedValue(serviceError)
 
-    await getDownloadLink.handler(request, h)
+    const result = await getDownloadLink.handler(request, h)
 
-    expect(h.response).toHaveBeenCalledWith({
-      success: false,
-      message: 'Failed to retrieve download link for year 2023',
-      error: 'S3 connection failed'
-    })
-    expect(responseBuilder.code).toHaveBeenCalledWith(statusCodes.internalServerError)
+    expect(result.isBoom).toBe(true)
+    expect(result.output.statusCode).toBe(statusCodes.internalServerError)
+    expect(result.output.payload.message).toBe('Failed to retrieve download link')
+    expect(h.response).not.toHaveBeenCalled()
   })
 
   it('should return 500 error code on exception', async () => {
@@ -113,9 +182,9 @@ describe('getDownloadLink', () => {
       new Error('Unexpected error')
     )
 
-    await getDownloadLink.handler(request, h)
+    const result = await getDownloadLink.handler(request, h)
 
-    expect(responseBuilder.code).toHaveBeenCalledWith(500)
+    expect(result.output.statusCode).toBe(statusCodes.internalServerError)
   })
 
   it('should include error message in response on failure', async () => {
@@ -124,10 +193,10 @@ describe('getDownloadLink', () => {
       new Error(errorMessage)
     )
 
-    await getDownloadLink.handler(request, h)
+    const result = await getDownloadLink.handler(request, h)
 
-    const responseCall = h.response.mock.calls[0][0]
-    expect(responseCall.error).toBe(errorMessage)
+    expect(result.isBoom).toBe(true)
+    expect(result.output.payload.message).toBe('Failed to retrieve download link')
   })
 
   it('should have correct route configuration', () => {

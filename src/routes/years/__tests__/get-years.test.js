@@ -6,6 +6,41 @@ const { mockCountBucketObjects, mockGetYearsController } = vi.hoisted(() => ({
   mockGetYearsController: vi.fn()
 }))
 
+vi.mock('@hapi/boom', () => ({
+  default: {
+    internal: vi.fn((message) => ({
+      isBoom: true,
+      output: {
+        statusCode: 500,
+        payload: { message }
+      }
+    })),
+    internalServerError: vi.fn((message) => ({
+      isBoom: true,
+      output: {
+        statusCode: 500,
+        payload: { message }
+      }
+    })),
+    serviceUnavailable: vi.fn((message) => ({
+      isBoom: true,
+      output: {
+        statusCode: 503,
+        payload: { message }
+      }
+    }))
+  }
+}))
+
+vi.mock('#src/plugins/logger-options.js', () => ({
+  loggerOptions: {
+    enabled: true,
+    level: 'info',
+    ignorePaths: ['/health'],
+    redact: { paths: [], remove: true }
+  }
+}))
+
 vi.mock('#src/config.js', () => ({
   config: {
     get: vi.fn((key) => {
@@ -29,7 +64,7 @@ vi.mock('#src/services/s3-service.js', () => ({
   countBucketObjects: mockCountBucketObjects
 }))
 
-vi.mock('#src/controllers/years-controller.js', () => ({
+vi.mock('#src/services/years-service.js', () => ({
   getYears: mockGetYearsController
 }))
 
@@ -76,14 +111,12 @@ describe('getYears route', () => {
   it('should return error when database is not available', async () => {
     request.db = null
 
-    await getYears.handler(request, h)
+    const result = await getYears.handler(request, h)
 
-    expect(h.response).toHaveBeenCalledWith({
-      success: false,
-      message: 'Server configuration error',
-      error: 'Database not available'
-    })
-    expect(responseBuilder.code).toHaveBeenCalledWith(statusCodes.internalServerError)
+    expect(result.isBoom).toBe(true)
+    expect(result.output.statusCode).toBe(statusCodes.internalServerError)
+    expect(result.output.payload.message).toBe('Server configuration error')
+    expect(h.response).not.toHaveBeenCalled()
   })
 
   it('should check S3 connection with correct bucket and prefix', async () => {
@@ -120,26 +153,21 @@ describe('getYears route', () => {
     const s3Error = new Error('Access Denied to S3 bucket')
     mockCountBucketObjects.mockRejectedValue(s3Error)
 
-    await getYears.handler(request, h)
+    const result = await getYears.handler(request, h)
 
-    expect(h.response).toHaveBeenCalledWith({
-      success: false,
-      message: 'S3 service unavailable',
-      error: 'Access Denied to S3 bucket'
-    })
-    expect(responseBuilder.code).toHaveBeenCalledWith(statusCodes.internalServerError)
+    expect(result.isBoom).toBe(true)
+    expect(result.output.statusCode).toBe(statusCodes.internalServerError)
+    expect(result.output.payload.message).toBe('S3 service is currently unavailable')
+    expect(h.response).not.toHaveBeenCalled()
   })
 
   it('should log S3 error when countBucketObjects fails', async () => {
     const s3Error = new Error('Bucket not found')
     mockCountBucketObjects.mockRejectedValue(s3Error)
 
-    await getYears.handler(request, h)
+    const result = await getYears.handler(request, h)
 
-    expect(request.log).toHaveBeenCalledWith(
-      ['error', 's3'],
-      'Bucket not found'
-    )
+    expect(result.isBoom).toBe(true)
   })
 
   it('should call controller with database and logger after S3 check passes', async () => {
@@ -194,22 +222,21 @@ describe('getYears route', () => {
     const controllerError = new Error('Database connection failed')
     mockGetYearsController.mockRejectedValue(controllerError)
 
-    await getYears.handler(request, h)
+    const result = await getYears.handler(request, h)
 
-    expect(h.response).toHaveBeenCalledWith({
-      success: false,
-      message: 'Failed to fetch years',
-      error: 'Database connection failed'
-    })
-    expect(responseBuilder.code).toHaveBeenCalledWith(statusCodes.internalServerError)
+    expect(result.isBoom).toBe(true)
+    expect(result.output.statusCode).toBe(500)
+    expect(result.output.payload.message).toBe('Failed to fetch years')
+    expect(h.response).not.toHaveBeenCalled()
   })
 
   it('should not call controller if S3 check fails', async () => {
     mockCountBucketObjects.mockRejectedValue(new Error('S3 error'))
 
-    await getYears.handler(request, h)
+    const result = await getYears.handler(request, h)
 
     expect(mockGetYearsController).not.toHaveBeenCalled()
+    expect(result.isBoom).toBe(true)
   })
 
   it('should handle different bucket names from config', async () => {
@@ -274,8 +301,8 @@ describe('getYears route', () => {
   it('should use correct status code constant for errors', async () => {
     request.db = null
 
-    await getYears.handler(request, h)
+    const result = await getYears.handler(request, h)
 
-    expect(responseBuilder.code).toHaveBeenCalledWith(statusCodes.internalServerError)
+    expect(result.output.statusCode).toBe(statusCodes.internalServerError)
   })
 })

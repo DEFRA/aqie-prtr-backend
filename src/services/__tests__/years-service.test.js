@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { getYears } from '#src/controllers/years-controller.js'
+import { getYears } from '#src/services/years-service.js'
 
 describe('getYears', () => {
   let mockDb

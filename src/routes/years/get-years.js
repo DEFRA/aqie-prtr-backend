@@ -4,10 +4,11 @@
 
 import Boom from '@hapi/boom'
 
-import { getYears as getYearsController } from '../../controllers/years-controller.js'
+import { getYears as getYearsController } from '../../services/years-service.js'
 import { config } from '#src/config.js'
 import { countBucketObjects } from '../../services/s3-service.js'
 import { createLogger } from '../../common/helpers/logging/logger.js'
+import { statusCodes } from '#src/common/constants/status-codes.js'
 
 const logger = createLogger()
 
@@ -30,7 +31,7 @@ export const getYears = {
       logger.error(
         `[get-years] S3 service error: ${error.message}`
       )
-      return Boom.serviceUnavailable('S3 service is currently unavailable')
+      return Boom.internalServerError('S3 service is currently unavailable')
     }
 
     // Validate database is available, if so fetch years from database
@@ -41,7 +42,7 @@ export const getYears = {
 
     try {
       const result = await getYearsController(request.db, request.logger)
-      return h.response(result).code(200)
+      return h.response(result).code(statusCodes.ok)
     } catch (error) {
       logger.error(
         `[get-years] failed to fetch years: ${error.message}`
