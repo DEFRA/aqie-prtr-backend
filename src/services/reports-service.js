@@ -22,7 +22,8 @@ export class ReportsBackendError extends Error {
  * @returns {Promise<{count: number, results: object[]}>} Reports with metadata
  * @throws {ReportsBackendError}
  */
-async function getReports(db, logger) {
+async function getReports(_db, logger) {
+//async function getReports(db, logger) {
   try {
     // Database query code - kept for future use
     // const reportsCollection = db.collection('Reports')

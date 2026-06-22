@@ -46,7 +46,7 @@ describe('ReportsBackendError', () => {
 
   it('should be instanceof Error', () => {
     const error = new ReportsBackendError('Test')
-    expect(error instanceof Error).toBe(true)
+    expect(error).toBeInstanceOf(Error)
   })
 })
 
