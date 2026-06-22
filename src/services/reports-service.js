@@ -23,7 +23,7 @@ export class ReportsBackendError extends Error {
  * @throws {ReportsBackendError}
  */
 async function getReports(_db, logger) {
-//async function getReports(db, logger) {
+  //async function getReports(db, logger) {
   try {
     // Database query code - kept for future use
     // const reportsCollection = db.collection('Reports')
