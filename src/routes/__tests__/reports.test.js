@@ -63,7 +63,7 @@ vi.mock('#src/config.js', () => ({
     get: vi.fn((key) => {
       const configMap = {
         'log.level': 'info',
-        's3.region': 'us-east-1'
+        's3.region': 'eu-east-1'
       }
       return configMap[key]
     })
@@ -110,7 +110,7 @@ function setupDefaultMocks() {
   config.get.mockImplementation((key) => {
     const configMap = {
       'log.level': 'info',
-      's3.region': 'us-east-1',
+      's3.region': 'eu-east-1',
       's3.bucket': 'test-bucket'
     }
     return configMap[key]

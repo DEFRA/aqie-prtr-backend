@@ -122,7 +122,7 @@ export const config = convict({
     region: {
       doc: 'AWS region for S3 bucket',
       format: String,
-      default: '',
+      default: 'eu-west-2',
       env: 'AWS_REGION'
     }
   },
