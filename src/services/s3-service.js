@@ -18,7 +18,7 @@ const logger = createLogger()
 export class S3BackendError extends Error {
   constructor(message, { status, cause } = {}) {
     super(message)
-    this.name = 'S3ServiceError'
+    this.name = 'S3BackendError'
     this.status = status ?? null
     if (cause) {
       this.cause = cause
@@ -79,9 +79,7 @@ export const generatePresignedReportDownloadLink = async (bucketName, year) => {
       expiresIn: PRESIGNED_URL_EXPIRY_SECONDS
     })
 
-    logger.info(
-      `Successfully generated S3 download link for year ${year}, presigned URL: ${presignedUrl}`
-    )
+    logger.info(`Successfully generated S3 download link for year ${year}.`)
     return presignedUrl
   } catch (error) {
     logger.error(error, 'Failed to generate S3 download link')
