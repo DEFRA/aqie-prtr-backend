@@ -25,18 +25,15 @@ export class ReportsBackendError extends Error {
 async function getReports(db, logger) {
   try {
     // Database query code - kept for future use
-    const reportsCollection = db.collection('Reports')
-    //const reports = await reportsCollection
-    const reportsFromDb = await reportsCollection
-      .find({})
-      .sort({ year: -1 })
-      .toArray()
-    console.log('Reports from DB:', reportsFromDb)
+    // const reportsCollection = db.collection('Reports')
+    // const reports = await reportsCollection
+    //   .find({})
+    //   .sort({ year: -1 })
+    //   .toArray()
 
     // For now, use example reports from JSON file instead
-    // To switch back to database, comment out the line below and uncomment the line above
+    // To switch back to database, delete the line below and uncomment the lines above
     const reports = exampleReports
-    // const reports = reportsFromDb
 
     return {
       count: reports.length,
