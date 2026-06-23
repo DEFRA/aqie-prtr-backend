@@ -4,15 +4,16 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 const {
   mockCountBucketObjects,
   mockGetReportsController,
-  mockGeneratePresignedReportDownloadLink,
+  mockGetReportDownloadLink,
   mockLogger
 } = vi.hoisted(() => ({
   mockCountBucketObjects: vi.fn(),
   mockGetReportsController: vi.fn(),
-  mockGeneratePresignedReportDownloadLink: vi.fn(),
+  mockGetReportDownloadLink: vi.fn(),
   mockLogger: {
     error: vi.fn(),
-    info: vi.fn()
+    info: vi.fn(),
+    warn: vi.fn()
   }
 }))
 
@@ -76,12 +77,12 @@ vi.mock('#src/common/helpers/logging/logger.js', () => ({
 
 vi.mock('#src/services/s3-service.js', () => ({
   countBucketObjects: mockCountBucketObjects,
-  generatePresignedReportDownloadLink: mockGeneratePresignedReportDownloadLink,
   S3BackendError: class S3BackendError extends Error {}
 }))
 
 vi.mock('#src/services/reports-service.js', () => ({
   getReports: mockGetReportsController,
+  getReportDownloadLink: mockGetReportDownloadLink,
   ReportsBackendError: class ReportsBackendError extends Error {}
 }))
 
@@ -442,7 +443,7 @@ describe('handleDownloadLink handler', () => {
   describe('successful responses', () => {
     it('should generate presigned URL for valid year', async () => {
       const presignedUrl = 'https://example.com/presigned-link'
-      mockGeneratePresignedReportDownloadLink.mockResolvedValue(presignedUrl)
+      mockGetReportDownloadLink.mockResolvedValue(presignedUrl)
 
       await handleDownloadLink(request, h)
 
@@ -450,23 +451,20 @@ describe('handleDownloadLink handler', () => {
       expect(responseBuilder.code).toHaveBeenCalledWith(statusCodes.ok)
     })
 
-    it('should call S3 service with correct bucket and year', async () => {
-      mockGeneratePresignedReportDownloadLink.mockResolvedValue(
-        'https://example.com/link'
-      )
+    it('should call getReportDownloadLink with correct parameters', async () => {
+      mockGetReportDownloadLink.mockResolvedValue('https://example.com/link')
 
       await handleDownloadLink(request, h)
 
-      expect(mockGeneratePresignedReportDownloadLink).toHaveBeenCalledWith(
-        'test-bucket',
-        2023
+      expect(mockGetReportDownloadLink).toHaveBeenCalledWith(
+        request.db,
+        2023,
+        'test-bucket'
       )
     })
 
     it('should return 200 status code on success', async () => {
-      mockGeneratePresignedReportDownloadLink.mockResolvedValue(
-        'https://example.com/link'
-      )
+      mockGetReportDownloadLink.mockResolvedValue('https://example.com/link')
 
       await handleDownloadLink(request, h)
 
@@ -474,9 +472,7 @@ describe('handleDownloadLink handler', () => {
     })
 
     it('should log successful presigned URL generation', async () => {
-      mockGeneratePresignedReportDownloadLink.mockResolvedValue(
-        'https://example.com/link'
-      )
+      mockGetReportDownloadLink.mockResolvedValue('https://example.com/link')
 
       await handleDownloadLink(request, h)
 
@@ -487,7 +483,7 @@ describe('handleDownloadLink handler', () => {
 
     it('should return response with downloadLink property', async () => {
       const presignedUrl = 'https://s3.example.com/report.pdf?token=xyz'
-      mockGeneratePresignedReportDownloadLink.mockResolvedValue(presignedUrl)
+      mockGetReportDownloadLink.mockResolvedValue(presignedUrl)
 
       await handleDownloadLink(request, h)
 
@@ -497,38 +493,36 @@ describe('handleDownloadLink handler', () => {
     })
 
     it('should handle different years', async () => {
-      mockGeneratePresignedReportDownloadLink.mockResolvedValue(
-        'https://example.com/link'
-      )
+      mockGetReportDownloadLink.mockResolvedValue('https://example.com/link')
 
       request.params.year = 2022
       await handleDownloadLink(request, h)
 
-      expect(mockGeneratePresignedReportDownloadLink).toHaveBeenCalledWith(
-        'test-bucket',
-        2022
+      expect(mockGetReportDownloadLink).toHaveBeenCalledWith(
+        request.db,
+        2022,
+        'test-bucket'
       )
     })
 
     it('should handle oldest valid year', async () => {
-      mockGeneratePresignedReportDownloadLink.mockResolvedValue(
-        'https://example.com/link'
-      )
+      mockGetReportDownloadLink.mockResolvedValue('https://example.com/link')
 
       request.params.year = 2007
       await handleDownloadLink(request, h)
 
-      expect(mockGeneratePresignedReportDownloadLink).toHaveBeenCalledWith(
-        'test-bucket',
-        2007
+      expect(mockGetReportDownloadLink).toHaveBeenCalledWith(
+        request.db,
+        2007,
+        'test-bucket'
       )
     })
   })
 
   describe('S3 error handling', () => {
-    it('should return 502 error when service fails', async () => {
+    it('should return 502 error when S3 service fails', async () => {
       const serviceError = new S3BackendError('S3 connection failed')
-      mockGeneratePresignedReportDownloadLink.mockRejectedValue(serviceError)
+      mockGetReportDownloadLink.mockRejectedValue(serviceError)
 
       const result = await handleDownloadLink(request, h)
 
@@ -539,9 +533,9 @@ describe('handleDownloadLink handler', () => {
       )
     })
 
-    it('should not call response builder if service fails', async () => {
+    it('should not call response builder if S3 service fails', async () => {
       const serviceError = new S3BackendError('Bucket not found')
-      mockGeneratePresignedReportDownloadLink.mockRejectedValue(serviceError)
+      mockGetReportDownloadLink.mockRejectedValue(serviceError)
 
       const result = await handleDownloadLink(request, h)
 
@@ -551,7 +545,7 @@ describe('handleDownloadLink handler', () => {
 
     it('should log S3 error with year information', async () => {
       const serviceError = new S3BackendError('S3 error')
-      mockGeneratePresignedReportDownloadLink.mockRejectedValue(serviceError)
+      mockGetReportDownloadLink.mockRejectedValue(serviceError)
 
       await handleDownloadLink(request, h)
 
@@ -563,7 +557,7 @@ describe('handleDownloadLink handler', () => {
     it('should include error message in logs', async () => {
       const errorMessage = 'Access denied'
       const serviceError = new S3BackendError(errorMessage)
-      mockGeneratePresignedReportDownloadLink.mockRejectedValue(serviceError)
+      mockGetReportDownloadLink.mockRejectedValue(serviceError)
 
       await handleDownloadLink(request, h)
 
@@ -572,10 +566,46 @@ describe('handleDownloadLink handler', () => {
     })
   })
 
+  describe('ReportsBackendError handling', () => {
+    it('should return 502 error when reports service fails', async () => {
+      const reportsError = new ReportsBackendError('Reports service failed')
+      mockGetReportDownloadLink.mockRejectedValue(reportsError)
+
+      const result = await handleDownloadLink(request, h)
+
+      expect(result.isBoom).toBe(true)
+      expect(result.output.statusCode).toBe(502)
+      expect(result.output.payload.message).toBe(
+        'Reports service is currently unavailable'
+      )
+    })
+
+    it('should log reports error with year information', async () => {
+      const reportsError = new ReportsBackendError('Database error')
+      mockGetReportDownloadLink.mockRejectedValue(reportsError)
+
+      await handleDownloadLink(request, h)
+
+      expect(mockLogger.error).toHaveBeenCalled()
+      const errorCall = mockLogger.error.mock.calls[0][0]
+      expect(errorCall).toContain('2023')
+    })
+
+    it('should include reports error message in logs', async () => {
+      const reportsError = new ReportsBackendError('Query failed')
+      mockGetReportDownloadLink.mockRejectedValue(reportsError)
+
+      await handleDownloadLink(request, h)
+
+      const errorCall = mockLogger.error.mock.calls[0][0]
+      expect(errorCall).toContain('reports backend failed')
+    })
+  })
+
   describe('unexpected error handling', () => {
     it('should throw unexpected errors', async () => {
       const unexpectedError = new Error('Unexpected failure')
-      mockGeneratePresignedReportDownloadLink.mockRejectedValue(unexpectedError)
+      mockGetReportDownloadLink.mockRejectedValue(unexpectedError)
 
       await expect(handleDownloadLink(request, h)).rejects.toThrow(
         'Unexpected failure'
@@ -584,7 +614,7 @@ describe('handleDownloadLink handler', () => {
 
     it('should log unexpected errors with year info', async () => {
       const unexpectedError = new Error('Unknown error')
-      mockGeneratePresignedReportDownloadLink.mockRejectedValue(unexpectedError)
+      mockGetReportDownloadLink.mockRejectedValue(unexpectedError)
 
       try {
         await handleDownloadLink(request, h)
