@@ -1,10 +1,5 @@
 // Business logic for S3 operations
 
-// Upload documents
-// Download documents
-// Delete objects
-// Similar pattern to your existing location-service.js
-
 import {
   S3Client,
   ListObjectsV2Command,
@@ -16,20 +11,38 @@ import { createLogger } from '#src/common/helpers/logging/logger.js'
 
 const logger = createLogger()
 
+/**
+ * Thrown when S3 operations fail (network, invalid credentials, bucket not found, etc).
+ * Lets routes map failures to appropriate HTTP status codes.
+ */
+export class S3BackendError extends Error {
+  constructor(message, { status, cause } = {}) {
+    super(message)
+    this.name = 'S3BackendError'
+    this.status = status ?? null
+    if (cause) {
+      this.cause = cause
+    }
+  }
+}
+
+// Constants
+const PRESIGNED_URL_EXPIRY_SECONDS = 9000 // 150 minutes
+
 // Initialize the S3 Client.
-// If running on AWS (ECS, EKS, Lambda), leave the object empty {};
 // it will automatically inherit permissions from the IAM Task Role.
 const s3Client = new S3Client({
   region: config.get('s3.region')
 })
 
 /**
- * Lists objects within a specific S3 bucket
+ * Counts objects within a specific S3 bucket
  * @param {string} bucketName - The name of the S3 bucket
  * @param {string} [prefix] - Optional folder path/prefix to filter by
- * @returns {Promise<Array>} - Array of object metadata
+ * @returns {Promise<number>} - Number of objects found
  */
-export const listBucketContents = async (bucketName, prefix = '') => {
+
+export const countBucketObjects = async (bucketName, prefix = '') => {
   const command = new ListObjectsV2Command({
     Bucket: bucketName,
     Prefix: prefix
@@ -37,111 +50,24 @@ export const listBucketContents = async (bucketName, prefix = '') => {
 
   try {
     const response = await s3Client.send(command)
-
-    // response.Contents contains the array of files
-    if (!response.Contents) {
-      return []
-    }
-
-    // Map the response to return a clean list of file details
-    return response.Contents.map((file) => ({
-      key: file.Key, // The file path/name
-      lastModified: file.LastModified,
-      size: file.Size // In bytes
-    }))
+    return response.KeyCount ?? 0
   } catch (error) {
-    // Integrate this with your structured logging (hapi-pino) in your actual route
-    logger.error(error, 'Failed to list S3 contents')
-    throw new Error(`Failed to list S3 contents: ${error.message}`)
+    logger.error(error, 'Failed to count S3 objects')
+    throw new S3BackendError(`Failed to count S3 objects: ${error.message}`, {
+      cause: error
+    })
   }
 }
 
-export const getDownloadLinksAndSaveToDB = async (
-  db,
-  bucketName,
-  prefix = ''
-) => {
+/**
+ * Generates a presigned download link for a report for a specific year.
+ * @param {string} bucketName - The name of the S3 bucket
+ * @param {number} year - The year of the report to download
+ * @returns {Promise<string>} - A presigned URL for downloading the file
+ */
+export const generatePresignedReportDownloadLink = async (bucketName, year) => {
   try {
-    const listCommand = new ListObjectsV2Command({
-      Bucket: bucketName,
-      Prefix: prefix
-    })
-    const s3Response = await s3Client.send(listCommand)
-    const files = s3Response.Contents || []
-    const presignedUrls = []
-
-    for (const [index, file] of files.entries()) {
-      const downloadCommand = new GetObjectCommand({
-        Bucket: bucketName,
-        Key: file.Key
-      })
-
-      const presignedUrl = await getSignedUrl(s3Client, downloadCommand, {
-        expiresIn: 9000
-      })
-      presignedUrls.push(presignedUrl)
-
-      await db
-        .collection('Years')
-        .updateOne(
-          { yearID: index + 1 },
-          { $set: { downloadLink: presignedUrl } }
-        )
-    }
-
-    return presignedUrls
-  } catch (error) {
-    throw new Error(
-      `Failed to generate and save S3 download links: ${error.message}`
-    )
-  }
-}
-
-export const getDownloadLinkAndSaveToDB = async (
-  db,
-  bucketName,
-  year,
-  prefix = 'reports'
-) => {
-  try {
-    const normalizedPrefix = prefix.replace(/\/$/, '')
-    const fileKey = normalizedPrefix
-      ? `${normalizedPrefix}/uk_prtr_dataset_${year}.xml`
-      : `uk_prtr_dataset_${year}.xml`
-
-    const downloadCommand = new GetObjectCommand({
-      Bucket: bucketName,
-      Key: fileKey
-    })
-
-    const presignedUrl = await getSignedUrl(s3Client, downloadCommand, {
-      expiresIn: 9000
-    })
-
-    // Updates the database for this specific dataset file
-    await db
-      .collection('Years')
-      .updateOne({ year }, { $set: { downloadLink: presignedUrl } })
-    logger.info(
-      `Successfully generated and saved S3 download link for year ${year} to DB, presigned URL: ${presignedUrl}`
-    )
-  } catch (error) {
-    logger.error(error, 'Failed to generate and save S3 download link')
-    throw new Error(
-      `Failed to generate and save S3 download link: ${error.message}`
-    )
-  }
-}
-export const generatePresignedDownloadLink = async (
-  bucketName,
-  year,
-  prefix = 'reports'
-) => {
-  try {
-    const normalizedPrefix = prefix.replace(/\/$/, '')
-    const fileKey = normalizedPrefix
-      ? `${normalizedPrefix}/uk_prtr_dataset_${year}.xml`
-      : `uk_prtr_dataset_${year}.xml`
+    const fileKey = `reports/uk_prtr_dataset_${year}.xml`
 
     const downloadCommand = new GetObjectCommand({
       Bucket: bucketName,
@@ -150,15 +76,16 @@ export const generatePresignedDownloadLink = async (
 
     // Generate a temporary download link (expires in 150 mins)
     const presignedUrl = await getSignedUrl(s3Client, downloadCommand, {
-      expiresIn: 9000
+      expiresIn: PRESIGNED_URL_EXPIRY_SECONDS
     })
 
-    logger.info(
-      `Successfully generated S3 download link for year ${year}, presigned URL: ${presignedUrl}`
-    )
+    logger.info(`Successfully generated S3 download link for year ${year}.`)
     return presignedUrl
   } catch (error) {
     logger.error(error, 'Failed to generate S3 download link')
-    throw new Error(`Failed to generate S3 download link: ${error.message}`)
+    throw new S3BackendError(
+      `Failed to generate S3 download link: ${error.message}`,
+      { cause: error }
+    )
   }
 }
