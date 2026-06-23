@@ -137,7 +137,7 @@ describe('getReportDownloadLink', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockPresignedUrl = 'https://s3.example.com/presigned-url'
-    
+
     mockReportsCollection = {
       findOne: vi.fn(),
       updateOne: vi.fn()
@@ -269,9 +269,7 @@ describe('getReportDownloadLink', () => {
     })
 
     it('should fall back to S3 search on DB error', async () => {
-      mockReportsCollection.findOne.mockRejectedValue(
-        new Error('DB error')
-      )
+      mockReportsCollection.findOne.mockRejectedValue(new Error('DB error'))
       mockFindKeyByMetadataFilename.mockResolvedValue('key')
 
       await getReportDownloadLink(mockDb, 2023, 'test-bucket')
@@ -295,7 +293,7 @@ describe('getReportDownloadLink', () => {
   describe('error handling - S3 failures', () => {
     it('should throw S3BackendError when metadata search fails', async () => {
       const { S3BackendError } = await import('#src/services/s3-service.js')
-      
+
       mockReportsCollection.findOne.mockResolvedValue({ year: 2023 })
       const s3Error = new S3BackendError('S3 connection failed')
       mockFindKeyByMetadataFilename.mockRejectedValue(s3Error)
@@ -307,7 +305,7 @@ describe('getReportDownloadLink', () => {
 
     it('should throw S3BackendError from presigned URL generation', async () => {
       const { S3BackendError } = await import('#src/services/s3-service.js')
-      
+
       mockReportsCollection.findOne.mockResolvedValue({
         year: 2023,
         s3Key: 'key'
