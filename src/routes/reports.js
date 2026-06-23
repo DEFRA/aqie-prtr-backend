@@ -12,10 +12,7 @@ import {
   getReportDownloadLink,
   ReportsBackendError
 } from '#src/services/reports-service.js'
-import {
-  countBucketObjects,
-  S3BackendError
-} from '#src/services/s3-service.js'
+import { countBucketObjects, S3BackendError } from '#src/services/s3-service.js'
 import { statusCodes } from '#src/common/constants/status-codes.js'
 
 const logger = createLogger()
@@ -71,7 +68,7 @@ export async function handleGetReports(request, h) {
 
 /**
  * Generate a presigned download link for a report for a specific year.
- * 
+ *
  * First checks the database for the S3 key.
  * If not found, searches S3 metadata to locate the file.
  * Maps service failures to a clean 502 response.

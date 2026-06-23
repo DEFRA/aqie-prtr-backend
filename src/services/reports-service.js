@@ -63,7 +63,7 @@ async function getReports(_db, logger) {
 
 /**
  * Get a presigned download link for a report by year.
- * 
+ *
  * Strategy:
  * 1. First, check if the S3 key is stored in the database (fast)
  * 2. If not found, search S3 metadata to find the key (slower, fallback)
@@ -77,13 +77,13 @@ async function getReports(_db, logger) {
  */
 export async function getReportDownloadLink(db, year, bucketName) {
   try {
-    let s3Key;
+    let s3Key
 
     // Step 1: Try to get S3 key from database
     try {
       const reportsCollection = db.collection('Reports')
       const report = await reportsCollection.findOne({ year })
-      
+
       if (report?.s3Key) {
         logger.info(`[get-report-download] Found S3 key in DB for year=${year}`)
         s3Key = report.s3Key
@@ -111,7 +111,9 @@ export async function getReportDownloadLink(db, year, bucketName) {
         //   { $set: { s3Key } },
         //   { upsert: true }
         // )
-        logger.info(`[get-report-download] Cached S3 key in DB for year=${year}`)
+        logger.info(
+          `[get-report-download] Cached S3 key in DB for year=${year}`
+        )
       } catch (cacheError) {
         logger.warn(
           `[get-report-download] Failed to cache S3 key in DB for year=${year}`,

@@ -61,13 +61,10 @@ export const countBucketObjects = async (bucketName, prefix = '') => {
 }
 
 //Files are uploaded to S3 with a metadata field called "x-filename" which contains the filename. This function searches for the file in the bucket by checking the metadata of each object.
-export const findKeyByMetadataFilename = async (
-  bucketName,
-  year
-) => {
+export const findKeyByMetadataFilename = async (bucketName, year) => {
   const encodedFilename = `uk_prtr_dataset_${year}.xml`
 
-  let continuationToken;
+  let continuationToken
 
   do {
     const { Contents, NextContinuationToken } = await s3Client.send(
@@ -75,7 +72,7 @@ export const findKeyByMetadataFilename = async (
         Bucket: bucketName,
         ContinuationToken: continuationToken
       })
-    );
+    )
 
     for (const { Key } of Contents || []) {
       const { Metadata } = await s3Client.send(
@@ -83,19 +80,18 @@ export const findKeyByMetadataFilename = async (
           Bucket: bucketName,
           Key
         })
-      );
+      )
 
       if (Metadata?.encodedfilename === encodedFilename) {
-        return Key; // ✅ found match
+        return Key // ✅ found match
       }
     }
 
-    continuationToken = NextContinuationToken;
+    continuationToken = NextContinuationToken
+  } while (continuationToken)
 
-  } while (continuationToken);
-
-  throw new Error(`File not found: ${encodedFilename}`);
-};
+  throw new Error(`File not found: ${encodedFilename}`)
+}
 
 /**
  * Generates a presigned download link for a report for a specific year.
@@ -104,7 +100,11 @@ export const findKeyByMetadataFilename = async (
  * @param {number} year - The year of the report to download
  * @returns {Promise<string>} - A presigned URL for downloading the file
  */
-export const generatePresignedReportDownloadLink = async (bucketName, fileKey, year) => {
+export const generatePresignedReportDownloadLink = async (
+  bucketName,
+  fileKey,
+  year
+) => {
   try {
     const downloadCommand = new GetObjectCommand({
       Bucket: bucketName,
