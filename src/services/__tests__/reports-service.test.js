@@ -5,21 +5,26 @@ import {
   ReportsBackendError
 } from '#src/services/reports-service.js'
 
-// Mock the S3 service
-const mockFindKeyByMetadataFilename = vi.fn()
-const mockGeneratePresignedReportDownloadLink = vi.fn()
+// Mock the S3 service - hoisted to avoid initialization issues
+const {
+  mockFindKeyByMetadataFilename,
+  mockGeneratePresignedReportDownloadLink,
+  mockLogger
+} = vi.hoisted(() => ({
+  mockFindKeyByMetadataFilename: vi.fn(),
+  mockGeneratePresignedReportDownloadLink: vi.fn(),
+  mockLogger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn()
+  }
+}))
 
 vi.mock('#src/services/s3-service.js', () => ({
   findKeyByMetadataFilename: mockFindKeyByMetadataFilename,
   generatePresignedReportDownloadLink: mockGeneratePresignedReportDownloadLink,
   S3BackendError: class S3BackendError extends Error {}
 }))
-
-const mockLogger = {
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn()
-}
 
 vi.mock('#src/common/helpers/logging/logger.js', () => ({
   createLogger: vi.fn(() => mockLogger)
