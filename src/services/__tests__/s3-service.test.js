@@ -179,11 +179,7 @@ describe('generatePresignedReportDownloadLink', () => {
     mockGetSignedUrl.mockRejectedValue(signError)
 
     await expect(
-      generatePresignedReportDownloadLink(
-        'test-bucket',
-        'file.xml',
-        2023
-      )
+      generatePresignedReportDownloadLink('test-bucket', 'file.xml', 2023)
     ).rejects.toThrow('Failed to generate S3 download link: Invalid bucket')
   })
 
@@ -204,11 +200,7 @@ describe('generatePresignedReportDownloadLink', () => {
   it('uses 150 minutes (9000 seconds) as presigned URL expiry', async () => {
     mockGetSignedUrl.mockResolvedValue('https://example.com/link')
 
-    await generatePresignedReportDownloadLink(
-      'test-bucket',
-      'file.xml',
-      2023
-    )
+    await generatePresignedReportDownloadLink('test-bucket', 'file.xml', 2023)
 
     // Verify the expiresIn value matches 150 minutes = 9000 seconds
     const callArgs = mockGetSignedUrl.mock.calls[0][2]
@@ -220,11 +212,7 @@ describe('generatePresignedReportDownloadLink', () => {
     mockGetSignedUrl.mockRejectedValue(signError)
 
     await expect(
-      generatePresignedReportDownloadLink(
-        'test-bucket',
-        'file.xml',
-        2023
-      )
+      generatePresignedReportDownloadLink('test-bucket', 'file.xml', 2023)
     ).rejects.toThrow('Failed to generate S3 download link')
   })
 
@@ -245,11 +233,7 @@ describe('generatePresignedReportDownloadLink', () => {
     }
 
     // Note: Logger is mocked globally, so we verify by checking it was called
-    await generatePresignedReportDownloadLink(
-      'test-bucket',
-      'file.xml',
-      2023
-    )
+    await generatePresignedReportDownloadLink('test-bucket', 'file.xml', 2023)
 
     // The actual logger behavior would be verified through integration tests
     expect(mockGetSignedUrl).toHaveBeenCalled()
@@ -272,12 +256,11 @@ describe('findKeyByMetadataFilename', () => {
             { Key: 'file3.xml' }
           ]
         })
-        .mockResolvedValueOnce({ Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' } })
+        .mockResolvedValueOnce({
+          Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' }
+        })
 
-      const result = await findKeyByMetadataFilename(
-        'test-bucket',
-        2023
-      )
+      const result = await findKeyByMetadataFilename('test-bucket', 2023)
 
       expect(result).toBe(expectedKey)
     })
@@ -285,7 +268,9 @@ describe('findKeyByMetadataFilename', () => {
     it('creates ListObjectsV2Command with bucket name', async () => {
       mockS3ClientInstance.send
         .mockResolvedValueOnce({ Contents: [{ Key: 'test-key' }] })
-        .mockResolvedValueOnce({ Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' } })
+        .mockResolvedValueOnce({
+          Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' }
+        })
 
       await findKeyByMetadataFilename('my-bucket', 2023)
 
@@ -296,7 +281,9 @@ describe('findKeyByMetadataFilename', () => {
     it('constructs correct encoded filename pattern from year', async () => {
       mockS3ClientInstance.send
         .mockResolvedValueOnce({ Contents: [{ Key: 'key' }] })
-        .mockResolvedValueOnce({ Metadata: { encodedfilename: 'uk_prtr_dataset_2022.xml' } })
+        .mockResolvedValueOnce({
+          Metadata: { encodedfilename: 'uk_prtr_dataset_2022.xml' }
+        })
 
       await findKeyByMetadataFilename('bucket', 2022)
 
@@ -315,7 +302,9 @@ describe('findKeyByMetadataFilename', () => {
             { Key: 'file3.xml' }
           ]
         })
-        .mockResolvedValueOnce({ Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' } })
+        .mockResolvedValueOnce({
+          Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' }
+        })
 
       const result = await findKeyByMetadataFilename('bucket', 2023)
 
@@ -333,7 +322,9 @@ describe('findKeyByMetadataFilename', () => {
         .mockResolvedValueOnce({
           Contents: [{ Key: matchingKey }]
         })
-        .mockResolvedValueOnce({ Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' } })
+        .mockResolvedValueOnce({
+          Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' }
+        })
 
       const result = await findKeyByMetadataFilename('bucket', 2023)
 
@@ -346,7 +337,9 @@ describe('findKeyByMetadataFilename', () => {
           Contents: [{ Key: 'file1.xml' }],
           NextContinuationToken: 'token-456'
         })
-        .mockResolvedValueOnce({ Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' } })
+        .mockResolvedValueOnce({
+          Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' }
+        })
         .mockResolvedValueOnce({
           Contents: [{ Key: 'file2.xml' }]
         })
@@ -361,7 +354,9 @@ describe('findKeyByMetadataFilename', () => {
     it('stops searching once match is found', async () => {
       mockS3ClientInstance.send
         .mockResolvedValueOnce({ Contents: [{ Key: 'match.xml' }] })
-        .mockResolvedValueOnce({ Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' } })
+        .mockResolvedValueOnce({
+          Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' }
+        })
 
       await findKeyByMetadataFilename('bucket', 2023)
 
@@ -372,9 +367,9 @@ describe('findKeyByMetadataFilename', () => {
     it('handles empty Contents array in bucket', async () => {
       mockS3ClientInstance.send.mockResolvedValueOnce({ Contents: [] })
 
-      await expect(
-        findKeyByMetadataFilename('bucket', 2023)
-      ).rejects.toThrow('File not found: uk_prtr_dataset_2023.xml')
+      await expect(findKeyByMetadataFilename('bucket', 2023)).rejects.toThrow(
+        'File not found: uk_prtr_dataset_2023.xml'
+      )
     })
   })
 
@@ -382,30 +377,34 @@ describe('findKeyByMetadataFilename', () => {
     it('throws error with message when no matching file found', async () => {
       mockS3ClientInstance.send
         .mockResolvedValueOnce({ Contents: [{ Key: 'file1.xml' }] })
-        .mockResolvedValueOnce({ Metadata: { encodedfilename: 'different.xml' } })
+        .mockResolvedValueOnce({
+          Metadata: { encodedfilename: 'different.xml' }
+        })
 
-      await expect(
-        findKeyByMetadataFilename('bucket', 2023)
-      ).rejects.toThrow('File not found: uk_prtr_dataset_2023.xml')
+      await expect(findKeyByMetadataFilename('bucket', 2023)).rejects.toThrow(
+        'File not found: uk_prtr_dataset_2023.xml'
+      )
     })
 
     it('includes year in error message', async () => {
       mockS3ClientInstance.send
         .mockResolvedValueOnce({ Contents: [{ Key: 'file1.xml' }] })
-        .mockResolvedValueOnce({ Metadata: { encodedfilename: 'uk_prtr_dataset_2022.xml' } })
+        .mockResolvedValueOnce({
+          Metadata: { encodedfilename: 'uk_prtr_dataset_2022.xml' }
+        })
 
-      await expect(
-        findKeyByMetadataFilename('bucket', 2023)
-      ).rejects.toThrow('2023')
+      await expect(findKeyByMetadataFilename('bucket', 2023)).rejects.toThrow(
+        '2023'
+      )
     })
 
     it('throws error when S3 ListObjects fails', async () => {
       const s3Error = new Error('Access Denied')
       mockS3ClientInstance.send.mockRejectedValueOnce(s3Error)
 
-      await expect(
-        findKeyByMetadataFilename('bucket', 2023)
-      ).rejects.toThrow('Access Denied')
+      await expect(findKeyByMetadataFilename('bucket', 2023)).rejects.toThrow(
+        'Access Denied'
+      )
     })
 
     it('throws error when S3 HeadObject fails', async () => {
@@ -414,9 +413,9 @@ describe('findKeyByMetadataFilename', () => {
         .mockResolvedValueOnce({ Contents: [{ Key: 'file1.xml' }] })
         .mockRejectedValueOnce(s3Error)
 
-      await expect(
-        findKeyByMetadataFilename('bucket', 2023)
-      ).rejects.toThrow('Connection timeout')
+      await expect(findKeyByMetadataFilename('bucket', 2023)).rejects.toThrow(
+        'Connection timeout'
+      )
     })
 
     it('throws error when paginating through results', async () => {
@@ -426,12 +425,14 @@ describe('findKeyByMetadataFilename', () => {
           Contents: [{ Key: 'file1.xml' }],
           NextContinuationToken: 'token-123'
         })
-        .mockResolvedValueOnce({ Metadata: { encodedfilename: 'uk_prtr_dataset_2022.xml' } })
+        .mockResolvedValueOnce({
+          Metadata: { encodedfilename: 'uk_prtr_dataset_2022.xml' }
+        })
         .mockRejectedValueOnce(s3Error)
 
-      await expect(
-        findKeyByMetadataFilename('bucket', 2023)
-      ).rejects.toThrow('Network error')
+      await expect(findKeyByMetadataFilename('bucket', 2023)).rejects.toThrow(
+        'Network error'
+      )
     })
   })
 
@@ -440,7 +441,9 @@ describe('findKeyByMetadataFilename', () => {
       const matchingKey = 'correct.xml'
       mockS3ClientInstance.send
         .mockResolvedValueOnce({ Contents: [{ Key: matchingKey }] })
-        .mockResolvedValueOnce({ Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' } })
+        .mockResolvedValueOnce({
+          Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' }
+        })
 
       const result = await findKeyByMetadataFilename('bucket', 2023)
 
@@ -458,7 +461,9 @@ describe('findKeyByMetadataFilename', () => {
           ]
         })
         .mockResolvedValueOnce({ Metadata: { encodedfilename: 'other.xml' } })
-        .mockResolvedValueOnce({ Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' } })
+        .mockResolvedValueOnce({
+          Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' }
+        })
 
       const result = await findKeyByMetadataFilename('bucket', 2023)
 
@@ -468,7 +473,9 @@ describe('findKeyByMetadataFilename', () => {
     it('handles metadata with lowercase encodedfilename key', async () => {
       mockS3ClientInstance.send
         .mockResolvedValueOnce({ Contents: [{ Key: 'match.xml' }] })
-        .mockResolvedValueOnce({ Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' } })
+        .mockResolvedValueOnce({
+          Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' }
+        })
 
       const result = await findKeyByMetadataFilename('bucket', 2023)
 
@@ -480,9 +487,9 @@ describe('findKeyByMetadataFilename', () => {
         .mockResolvedValueOnce({ Contents: [{ Key: 'file1.xml' }] })
         .mockResolvedValueOnce({})
 
-      await expect(
-        findKeyByMetadataFilename('bucket', 2023)
-      ).rejects.toThrow('File not found')
+      await expect(findKeyByMetadataFilename('bucket', 2023)).rejects.toThrow(
+        'File not found'
+      )
     })
   })
 
@@ -490,7 +497,9 @@ describe('findKeyByMetadataFilename', () => {
     it('handles year 2007', async () => {
       mockS3ClientInstance.send
         .mockResolvedValueOnce({ Contents: [{ Key: 'match.xml' }] })
-        .mockResolvedValueOnce({ Metadata: { encodedfilename: 'uk_prtr_dataset_2007.xml' } })
+        .mockResolvedValueOnce({
+          Metadata: { encodedfilename: 'uk_prtr_dataset_2007.xml' }
+        })
 
       const result = await findKeyByMetadataFilename('bucket', 2007)
 
@@ -501,7 +510,9 @@ describe('findKeyByMetadataFilename', () => {
       const currentYear = new Date().getFullYear()
       mockS3ClientInstance.send
         .mockResolvedValueOnce({ Contents: [{ Key: 'match.xml' }] })
-        .mockResolvedValueOnce({ Metadata: { encodedfilename: `uk_prtr_dataset_${currentYear}.xml` } })
+        .mockResolvedValueOnce({
+          Metadata: { encodedfilename: `uk_prtr_dataset_${currentYear}.xml` }
+        })
 
       const result = await findKeyByMetadataFilename('bucket', currentYear)
 
