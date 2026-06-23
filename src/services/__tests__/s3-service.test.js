@@ -256,9 +256,10 @@ describe('findKeyByMetadataFilename', () => {
             { Key: 'file3.xml' }
           ]
         })
+        .mockResolvedValueOnce({ Metadata: { encodedfilename: 'other.xml' } }) // file1.xml - no match
         .mockResolvedValueOnce({
           Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' }
-        })
+        }) // expectedKey - match!
 
       const result = await findKeyByMetadataFilename('test-bucket', 2023)
 
@@ -302,9 +303,10 @@ describe('findKeyByMetadataFilename', () => {
             { Key: 'file3.xml' }
           ]
         })
+        .mockResolvedValueOnce({ Metadata: { encodedfilename: 'other.xml' } }) // file1
         .mockResolvedValueOnce({
           Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' }
-        })
+        }) // matchingKey - match!
 
       const result = await findKeyByMetadataFilename('bucket', 2023)
 
@@ -337,11 +339,12 @@ describe('findKeyByMetadataFilename', () => {
           Contents: [{ Key: 'file1.xml' }],
           NextContinuationToken: 'token-456'
         })
-        .mockResolvedValueOnce({
-          Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' }
-        })
+        .mockResolvedValueOnce({ Metadata: { encodedfilename: 'other.xml' } })
         .mockResolvedValueOnce({
           Contents: [{ Key: 'file2.xml' }]
+        })
+        .mockResolvedValueOnce({
+          Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' }
         })
 
       await findKeyByMetadataFilename('bucket', 2023)
@@ -400,7 +403,7 @@ describe('findKeyByMetadataFilename', () => {
 
     it('throws error when S3 ListObjects fails', async () => {
       const s3Error = new Error('Access Denied')
-      mockS3ClientInstance.send.mockRejectedValueOnce(s3Error)
+      mockS3ClientInstance.send.mockRejectedValue(s3Error)
 
       await expect(findKeyByMetadataFilename('bucket', 2023)).rejects.toThrow(
         'Access Denied'
