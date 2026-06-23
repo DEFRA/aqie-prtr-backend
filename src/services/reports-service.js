@@ -27,12 +27,11 @@ export class ReportsBackendError extends Error {
  * Fetch all reports from the database, sorted by year descending.
  *
  * @param {object} db - MongoDB database instance
- * @param {object} logger - Logger instance
  * @returns {Promise<{count: number, results: object[]}>} Reports with metadata
  * @throws {ReportsBackendError}
  */
-async function getReports(_db, logger) {
-  //async function getReports(db, logger) {
+async function getReports(_db) {
+  //async function getReports(db) {
   try {
     // Database query code - kept for future use
     // const reportsCollection = db.collection('Reports')

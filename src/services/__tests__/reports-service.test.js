@@ -99,7 +99,7 @@ describe('getReports', () => {
         })
       })
 
-      const result = await getReports(mockDb, mockLogger)
+      const result = await getReports(mockDb)
 
       expect(result.count).toBe(18)
       expect(result.results[0]).toEqual({
@@ -121,7 +121,7 @@ describe('getReports', () => {
         })
       })
 
-      const result = await getReports(mockDb, mockLogger)
+      const result = await getReports(mockDb)
 
       expect(result.results.length).toBeGreaterThan(0)
       // Check that years are in descending order
