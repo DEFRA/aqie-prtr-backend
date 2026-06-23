@@ -224,20 +224,6 @@ describe('generatePresignedReportDownloadLink', () => {
     // Year is just used for logging, verify the function returns a URL
     expect(mockGetSignedUrl).toHaveBeenCalled()
   })
-
-  it('includes year in success log message', async () => {
-    mockGetSignedUrl.mockResolvedValue('https://example.com/link')
-    const mockLoggerInstance = {
-      info: vi.fn(),
-      error: vi.fn()
-    }
-
-    // Note: Logger is mocked globally, so we verify by checking it was called
-    await generatePresignedReportDownloadLink('test-bucket', 'file.xml', 2023)
-
-    // The actual logger behavior would be verified through integration tests
-    expect(mockGetSignedUrl).toHaveBeenCalled()
-  })
 })
 
 describe('findKeyByMetadataFilename', () => {
