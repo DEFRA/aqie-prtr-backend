@@ -3,7 +3,8 @@
 import {
   S3Client,
   ListObjectsV2Command,
-  GetObjectCommand
+  GetObjectCommand,
+  HeadObjectCommand
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { config } from '#src/config.js'
@@ -59,16 +60,52 @@ export const countBucketObjects = async (bucketName, prefix = '') => {
   }
 }
 
+//Files are uploaded to S3 with a metadata field called "x-filename" which contains the filename. This function searches for the file in the bucket by checking the metadata of each object.
+export const findKeyByMetadataFilename = async (
+  bucketName,
+  year
+) => {
+  const encodedFilename = `uk_prtr_dataset_${year}.xml`
+
+  let continuationToken;
+
+  do {
+    const { Contents, NextContinuationToken } = await s3Client.send(
+      new ListObjectsV2Command({
+        Bucket: bucketName,
+        ContinuationToken: continuationToken
+      })
+    );
+
+    for (const { Key } of Contents || []) {
+      const { Metadata } = await s3Client.send(
+        new HeadObjectCommand({
+          Bucket: bucketName,
+          Key
+        })
+      );
+
+      if (Metadata?.encodedfilename === encodedFilename) {
+        return Key; // ✅ found match
+      }
+    }
+
+    continuationToken = NextContinuationToken;
+
+  } while (continuationToken);
+
+  throw new Error(`File not found: ${encodedFilename}`);
+};
+
 /**
  * Generates a presigned download link for a report for a specific year.
  * @param {string} bucketName - The name of the S3 bucket
+ * @param {string} fileKey - The key of the file in the S3 bucket
  * @param {number} year - The year of the report to download
  * @returns {Promise<string>} - A presigned URL for downloading the file
  */
-export const generatePresignedReportDownloadLink = async (bucketName, year) => {
+export const generatePresignedReportDownloadLink = async (bucketName, fileKey, year) => {
   try {
-    const fileKey = `reports/uk_prtr_dataset_${year}.xml`
-
     const downloadCommand = new GetObjectCommand({
       Bucket: bucketName,
       Key: fileKey
