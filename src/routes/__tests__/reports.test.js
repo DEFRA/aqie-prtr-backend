@@ -234,9 +234,9 @@ describe('handleGetReports handler', () => {
       await handleGetReports(request, h)
 
       const errorCalls = mockLogger.error.mock.calls
-      expect(errorCalls.some((c) => c[0].includes('database backend failed'))).toBe(
-        true
-      )
+      expect(
+        errorCalls.some((c) => c[0].includes('database backend failed'))
+      ).toBe(true)
     })
 
     it('should not call response builder if getReports fails', async () => {
