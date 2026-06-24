@@ -135,38 +135,7 @@ describe('handleGetReports handler', () => {
   })
 
   describe('successful responses', () => {
-    it('should check S3 connection with correct bucket and prefix', async () => {
-      mockCountBucketObjects.mockResolvedValue(5)
-      mockGetReportsController.mockResolvedValue({
-        count: 2,
-        results: []
-      })
-
-      await handleGetReports(request, h)
-
-      expect(config.get).toHaveBeenCalledWith('s3.bucket')
-      expect(mockCountBucketObjects).toHaveBeenCalledWith(
-        'test-bucket',
-        'reports/'
-      )
-    })
-
-    it('should log S3 connection success with file count', async () => {
-      mockCountBucketObjects.mockResolvedValue(10)
-      mockGetReportsController.mockResolvedValue({
-        count: 2,
-        results: []
-      })
-
-      await handleGetReports(request, h)
-
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        '[get-reports.search] S3 connection OK (test-bucket). Files found: 10'
-      )
-    })
-
-    it('should call controller with database and logger after S3 check passes', async () => {
-      mockCountBucketObjects.mockResolvedValue(5)
+    it('should call getReports with database instance', async () => {
       mockGetReportsController.mockResolvedValue({
         count: 2,
         results: [{ id: '2023', year: 2023, reportIsLive: true }]
@@ -176,88 +145,11 @@ describe('handleGetReports handler', () => {
 
       expect(mockGetReportsController).toHaveBeenCalledWith(
         request.db,
-        mockLogger
-      )
-    })
-
-    it('should return controller result on success', async () => {
-      const controllerResult = {
-        count: 3,
-        results: [
-          { id: '2023', year: 2023, reportIsLive: true },
-          { id: '2022', year: 2022, reportIsLive: false },
-          { id: '2021', year: 2021, reportIsLive: false }
-        ]
-      }
-      mockCountBucketObjects.mockResolvedValue(8)
-      mockGetReportsController.mockResolvedValue(controllerResult)
-
-      await handleGetReports(request, h)
-
-      expect(h.response).toHaveBeenCalledWith(controllerResult)
-      expect(responseBuilder.code).toHaveBeenCalledWith(statusCodes.ok)
-    })
-
-    it('should return 200 status code on successful reports fetch', async () => {
-      mockCountBucketObjects.mockResolvedValue(5)
-      mockGetReportsController.mockResolvedValue({
-        count: 0,
-        results: []
-      })
-
-      await handleGetReports(request, h)
-
-      expect(responseBuilder.code).toHaveBeenCalledWith(200)
-    })
-
-    it('should return empty results array when controller returns no results', async () => {
-      mockCountBucketObjects.mockResolvedValue(0)
-      mockGetReportsController.mockResolvedValue({
-        count: 0,
-        results: []
-      })
-
-      await handleGetReports(request, h)
-
-      const response = h.response.mock.calls[0][0]
-      expect(response.results).toEqual([])
-      expect(response.count).toBe(0)
-    })
-
-    it('should handle S3 file count of zero', async () => {
-      mockCountBucketObjects.mockResolvedValue(0)
-      mockGetReportsController.mockResolvedValue({
-        count: 2,
-        results: []
-      })
-
-      await handleGetReports(request, h)
-
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        '[get-reports.search] S3 connection OK (test-bucket). Files found: 0'
-      )
-    })
-
-    it('should handle different bucket names from config', async () => {
-      config.get.mockImplementation((key) => {
-        if (key === 's3.bucket') {
-          return 'production-bucket'
-        }
-        return undefined
-      })
-      mockCountBucketObjects.mockResolvedValue(10)
-      mockGetReportsController.mockResolvedValue({ count: 0, results: [] })
-
-      await handleGetReports(request, h)
-
-      expect(mockCountBucketObjects).toHaveBeenCalledWith(
-        'production-bucket',
-        'reports/'
+        expect.any(Object)
       )
     })
 
     it('should log successful reports fetch with count', async () => {
-      mockCountBucketObjects.mockResolvedValue(5)
       mockGetReportsController.mockResolvedValue({
         count: 5,
         results: []
@@ -270,65 +162,86 @@ describe('handleGetReports handler', () => {
       )
     })
 
-    it('should log S3 bucket name in success message', async () => {
-      mockCountBucketObjects.mockResolvedValue(5)
-      mockGetReportsController.mockResolvedValue({ count: 0, results: [] })
+    it('should return controller result on success', async () => {
+      const controllerResult = {
+        count: 3,
+        results: [
+          { id: '2023', year: 2023, reportIsLive: true },
+          { id: '2022', year: 2022, reportIsLive: false },
+          { id: '2021', year: 2021, reportIsLive: false }
+        ]
+      }
+      mockGetReportsController.mockResolvedValue(controllerResult)
 
       await handleGetReports(request, h)
 
-      const calls = mockLogger.info.mock.calls
-      expect(calls.some((c) => c[0].includes('test-bucket'))).toBe(true)
+      expect(h.response).toHaveBeenCalledWith(controllerResult)
+      expect(responseBuilder.code).toHaveBeenCalledWith(statusCodes.ok)
+    })
+
+    it('should return 200 status code on successful reports fetch', async () => {
+      mockGetReportsController.mockResolvedValue({
+        count: 0,
+        results: []
+      })
+
+      await handleGetReports(request, h)
+
+      expect(responseBuilder.code).toHaveBeenCalledWith(200)
+    })
+
+    it('should return empty results array when controller returns no results', async () => {
+      mockGetReportsController.mockResolvedValue({
+        count: 0,
+        results: []
+      })
+
+      await handleGetReports(request, h)
+
+      const response = h.response.mock.calls[0][0]
+      expect(response.results).toEqual([])
+      expect(response.count).toBe(0)
     })
   })
 
-  describe('S3 error handling', () => {
-    it('should return 502 error when countBucketObjects fails', async () => {
-      const s3Error = new S3BackendError('Access Denied to S3 bucket')
-      mockCountBucketObjects.mockRejectedValue(s3Error)
+  describe('ReportsBackendError handling', () => {
+    it('should return 502 error when getReports fails', async () => {
+      const dbError = new ReportsBackendError('Database connection failed')
+      mockGetReportsController.mockRejectedValue(dbError)
 
       const result = await handleGetReports(request, h)
 
       expect(result.isBoom).toBe(true)
       expect(result.output.statusCode).toBe(502)
       expect(result.output.payload.message).toBe(
-        'S3 service is currently unavailable'
+        'Reports service is currently unavailable'
       )
     })
 
-    it('should not call controller if S3 check fails', async () => {
-      const s3Error = new S3BackendError('S3 error')
-      mockCountBucketObjects.mockRejectedValue(s3Error)
-
-      const result = await handleGetReports(request, h)
-
-      expect(mockGetReportsController).not.toHaveBeenCalled()
-      expect(result.isBoom).toBe(true)
-    })
-
-    it('should log S3 error when countBucketObjects fails', async () => {
-      const s3Error = new S3BackendError('Bucket not found')
-      mockCountBucketObjects.mockRejectedValue(s3Error)
+    it('should log error when getReports fails', async () => {
+      const dbError = new ReportsBackendError('Failed to fetch reports')
+      mockGetReportsController.mockRejectedValue(dbError)
 
       await handleGetReports(request, h)
 
       expect(mockLogger.error).toHaveBeenCalled()
     })
 
-    it('should include S3 error message in logs', async () => {
-      const s3Error = new S3BackendError('Bucket access denied')
-      mockCountBucketObjects.mockRejectedValue(s3Error)
+    it('should include error message in logs', async () => {
+      const dbError = new ReportsBackendError('Failed to fetch reports')
+      mockGetReportsController.mockRejectedValue(dbError)
 
       await handleGetReports(request, h)
 
       const errorCalls = mockLogger.error.mock.calls
-      expect(errorCalls.some((c) => c[0].includes('S3 backend failed'))).toBe(
-        true
-      )
+      expect(
+        errorCalls.some((c) => c[0].includes('database backend failed'))
+      ).toBe(true)
     })
 
-    it('should not call response builder if S3 fails', async () => {
-      const s3Error = new S3BackendError('S3 error')
-      mockCountBucketObjects.mockRejectedValue(s3Error)
+    it('should not call response builder if getReports fails', async () => {
+      const dbError = new ReportsBackendError('Database error')
+      mockGetReportsController.mockRejectedValue(dbError)
 
       const result = await handleGetReports(request, h)
 
@@ -337,44 +250,8 @@ describe('handleGetReports handler', () => {
     })
   })
 
-  describe('ReportsBackendError handling', () => {
-    it('should return 502 error when database backend fails', async () => {
-      mockCountBucketObjects.mockResolvedValue(5)
-      const dbError = new ReportsBackendError('Database connection failed')
-      mockGetReportsController.mockRejectedValue(dbError)
-
-      const result = await handleGetReports(request, h)
-
-      expect(result.isBoom).toBe(true)
-      expect(result.output.statusCode).toBe(502)
-    })
-
-    it('should log database error when getReports fails', async () => {
-      mockCountBucketObjects.mockResolvedValue(5)
-      const dbError = new ReportsBackendError('Query failed')
-      mockGetReportsController.mockRejectedValue(dbError)
-
-      await handleGetReports(request, h)
-
-      expect(mockLogger.error).toHaveBeenCalled()
-    })
-
-    it('should include error message in response', async () => {
-      mockCountBucketObjects.mockResolvedValue(5)
-      const dbError = new ReportsBackendError('Database unavailable')
-      mockGetReportsController.mockRejectedValue(dbError)
-
-      const result = await handleGetReports(request, h)
-
-      expect(result.output.payload.message).toBe(
-        'Reports service is currently unavailable'
-      )
-    })
-  })
-
   describe('unexpected error handling', () => {
     it('should throw unexpected errors', async () => {
-      mockCountBucketObjects.mockResolvedValue(5)
       const unexpectedError = new Error('Something completely unexpected')
       mockGetReportsController.mockRejectedValue(unexpectedError)
 
@@ -384,7 +261,6 @@ describe('handleGetReports handler', () => {
     })
 
     it('should log unexpected errors', async () => {
-      mockCountBucketObjects.mockResolvedValue(5)
       const unexpectedError = new Error('Unknown failure')
       mockGetReportsController.mockRejectedValue(unexpectedError)
 

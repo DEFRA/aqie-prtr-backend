@@ -101,20 +101,20 @@ describe('getReports', () => {
 
       const result = await getReports(mockDb)
 
-      expect(result.count).toBe(18)
+      expect(result.count).toBe(19)
       expect(result.results[0]).toEqual({
-        id: '2024',
-        year: 2024,
+        id: '2007',
+        year: 2007,
         reportIsLive: true
       })
       expect(result.results[1]).toEqual({
-        id: '2023',
-        year: 2023,
+        id: '2008',
+        year: 2008,
         reportIsLive: true
       })
     })
 
-    it('returns reports sorted by year descending in result array', async () => {
+    it('returns reports sorted by year ascending in result array', async () => {
       mockCollection.find.mockReturnValue({
         sort: vi.fn().mockReturnValue({
           toArray: vi.fn().mockResolvedValue([])
@@ -124,9 +124,9 @@ describe('getReports', () => {
       const result = await getReports(mockDb)
 
       expect(result.results.length).toBeGreaterThan(0)
-      // Check that years are in descending order
+      // Check that years are in ascending order
       for (let i = 0; i < result.results.length - 1; i++) {
-        expect(result.results[i].year).toBeGreaterThanOrEqual(
+        expect(result.results[i].year).toBeLessThanOrEqual(
           result.results[i + 1].year
         )
       }

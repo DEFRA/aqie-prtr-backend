@@ -12,7 +12,7 @@ import {
   getReportDownloadLink,
   ReportsBackendError
 } from '#src/services/reports-service.js'
-import { countBucketObjects, S3BackendError } from '#src/services/s3-service.js'
+import { S3BackendError } from '#src/services/s3-service.js'
 import { statusCodes } from '#src/common/constants/status-codes.js'
 
 const logger = createLogger()
@@ -29,32 +29,18 @@ const paramsSchema = Joi.object({
 })
 
 /**
- * Get all reports, verifying S3 connection health and querying the database.
- * Checks both S3 bucket connectivity and retrieves reports from the database.
+ * Get all reports from the database.
  *
  * @param {import('@hapi/hapi').Request} request
  * @param {import('@hapi/hapi').ResponseToolkit} h
  */
 export async function handleGetReports(request, h) {
-  const bucketName = config.get('s3.bucket')
-  const prefix = 'reports/'
-
   try {
-    // Check S3 health
-    const fileCount = await countBucketObjects(bucketName, prefix)
-    logger.info(
-      `[get-reports.search] S3 connection OK (${bucketName}). Files found: ${fileCount}`
-    )
-
     // Fetch reports from database
     const result = await getReports(request.db, logger)
     logger.info(`[get-reports.search] succeeded, count=${result.count}`)
     return h.response(result).code(statusCodes.ok)
   } catch (error) {
-    if (error instanceof S3BackendError) {
-      logger.error(`[get-reports.search] S3 backend failed: ${error.message}`)
-      return Boom.badGateway('S3 service is currently unavailable')
-    }
     if (error instanceof ReportsBackendError) {
       logger.error(
         `[get-reports.search] database backend failed: ${error.message}`
