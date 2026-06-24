@@ -1,4 +1,4 @@
-import exampleReports from '../data/example-reports.json'
+import exampleReports from '../data/example-reports.js'
 import {
   generatePresignedReportDownloadLink,
   findKeyByMetadataFilename,
@@ -37,12 +37,12 @@ async function getReports(_db) {
     // const reportsCollection = db.collection('Reports')
     // const reports = await reportsCollection
     //   .find({})
-    //   .sort({ year: -1 })
+    //   .sort({ year: 1 })
     //   .toArray()
 
     // For now, use example reports from JSON file instead
     // To switch back to database, delete the line below and uncomment the lines above
-    const reports = exampleReports
+    const reports = exampleReports.reports
 
     return {
       count: reports.length,
