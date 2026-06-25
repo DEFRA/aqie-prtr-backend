@@ -6,21 +6,29 @@ import {
 } from '#src/services/reports-service.js'
 
 // Mock the S3 service - hoisted to avoid initialization issues
-const {
-  mockGeneratePresignedReportDownloadLink,
-  mockLogger
-} = vi.hoisted(() => ({
-  mockGeneratePresignedReportDownloadLink: vi.fn(),
-  mockLogger: {
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn()
-  }
-}))
+const { mockGeneratePresignedReportDownloadLink, mockLogger } = vi.hoisted(
+  () => ({
+    mockGeneratePresignedReportDownloadLink: vi.fn(),
+    mockLogger: {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn()
+    }
+  })
+)
 
 vi.mock('#src/services/s3-service.js', () => ({
   generatePresignedReportDownloadLink: mockGeneratePresignedReportDownloadLink,
-  S3BackendError: class S3BackendError extends Error {}
+  S3BackendError: class S3BackendError extends Error {
+    constructor(message, { status, cause } = {}) {
+      super(message)
+      this.name = 'S3BackendError'
+      this.status = status ?? null
+      if (cause) {
+        this.cause = cause
+      }
+    }
+  }
 }))
 
 vi.mock('#src/common/helpers/logging/logger.js', () => ({
@@ -202,7 +210,9 @@ describe('getReportDownloadLink', () => {
     it('should re-throw S3BackendError without wrapping', async () => {
       const { S3BackendError } = await import('#src/services/s3-service.js')
 
-      const s3Error = new S3BackendError('S3 connection failed', { status: 502 })
+      const s3Error = new S3BackendError('S3 connection failed', {
+        status: 502
+      })
       mockGeneratePresignedReportDownloadLink.mockRejectedValue(s3Error)
 
       try {

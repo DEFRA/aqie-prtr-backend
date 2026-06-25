@@ -75,7 +75,9 @@ async function getReports(_db) {
  */
 export async function getReportDownloadLink(year, bucketName) {
   try {
-    logger.info(`[get-report-download] Generating download link for year=${year}`)
+    logger.info(
+      `[get-report-download] Generating download link for year=${year}`
+    )
 
     // Generate presigned URL (handles search and rename internally)
     const presignedUrl = await generatePresignedReportDownloadLink(

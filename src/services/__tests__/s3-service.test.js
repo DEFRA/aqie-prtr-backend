@@ -58,6 +58,7 @@ vi.mock('#src/common/helpers/logging/logger.js', () => ({
 
 import {
   countBucketObjects,
+  getReportFileKey,
   generatePresignedReportDownloadLink,
   findKeyByMetadataFilename
 } from '#src/services/s3-service.js'
@@ -131,34 +132,23 @@ describe('countBucketObjects', () => {
   })
 })
 
-describe('generatePresignedReportDownloadLink', () => {
+describe('locateReportFile', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  describe('when file exists at standard location', () => {
-    it('generates presigned URL without searching metadata', async () => {
-      const expectedUrl =
-        'https://s3.amazonaws.com/bucket/reports/uk_prtr_dataset_2023.xml?signed'
+  describe('when file exists at target key', () => {
+    it('returns target key without searching metadata', async () => {
       const targetFileKey = 'reports/uk_prtr_dataset_2023.xml'
 
-      // HeadObject succeeds - file exists at standard location
+      // HeadObject succeeds - file exists with target key
       mockS3ClientInstance.send.mockResolvedValueOnce({})
-      mockGetSignedUrl.mockResolvedValue(expectedUrl)
 
-      const result = await generatePresignedReportDownloadLink(
-        'test-bucket',
-        2023
-      )
+      const result = await getReportFileKey('test-bucket', 2023, targetFileKey)
 
-      expect(result).toBe(expectedUrl)
-      // Verify HeadObject was called to check standard location
+      expect(result).toBe(targetFileKey)
+      // Verify HeadObject was called to check for target key
       expect(mockHeadObjectCommand).toHaveBeenCalledWith({
-        Bucket: 'test-bucket',
-        Key: targetFileKey
-      })
-      // Verify GetObjectCommand uses the standard key
-      expect(mockGetObjectCommand).toHaveBeenCalledWith({
         Bucket: 'test-bucket',
         Key: targetFileKey
       })
@@ -166,36 +156,27 @@ describe('generatePresignedReportDownloadLink', () => {
       expect(mockListObjectsCommand).not.toHaveBeenCalled()
     })
 
-    it('uses correct standard filename format with year', async () => {
+    it('returns target key for different years', async () => {
       mockS3ClientInstance.send.mockResolvedValueOnce({})
-      mockGetSignedUrl.mockResolvedValue('https://example.com/link')
 
-      await generatePresignedReportDownloadLink('bucket', 2022)
+      const result = await getReportFileKey('bucket', 2022)
 
-      const headCall = mockHeadObjectCommand.mock.calls[0][0]
-      expect(headCall.Key).toBe('reports/uk_prtr_dataset_2022.xml')
-    })
-
-    it('uses 150 minutes (9000 seconds) as presigned URL expiry', async () => {
-      mockS3ClientInstance.send.mockResolvedValueOnce({})
-      mockGetSignedUrl.mockResolvedValue('https://example.com/link')
-
-      await generatePresignedReportDownloadLink('test-bucket', 2023)
-
-      const signUrlCall = mockGetSignedUrl.mock.calls[0]
-      expect(signUrlCall[2]).toEqual({ expiresIn: 9000 })
+      expect(result).toBe('reports/uk_prtr_dataset_2022.xml')
     })
   })
 
-  describe('when file not at standard location - search by metadata', () => {
-    it('searches metadata and renames file to standard location', async () => {
+  describe('when file not at target key - search by metadata', () => {
+    it('searches metadata and renames file to target key when file not found', async () => {
       const oldKey = 'uploaded/uk_prtr_dataset_2023.xml'
       const targetFileKey = 'reports/uk_prtr_dataset_2023.xml'
-      const expectedUrl = 'https://example.com/presigned-link'
 
-      // HeadObject fails - file not at standard location
+      // Create NoSuchKey error (AWS SDK error for missing object)
+      const notFoundError = new Error('The specified key does not exist.')
+      notFoundError.name = 'NoSuchKey'
+
+      // HeadObject fails with NoSuchKey - file not at target key
       mockS3ClientInstance.send
-        .mockRejectedValueOnce(new Error('Not found'))
+        .mockRejectedValueOnce(notFoundError)
         // ListObjects for metadata search
         .mockResolvedValueOnce({
           Contents: [{ Key: oldKey }]
@@ -209,14 +190,9 @@ describe('generatePresignedReportDownloadLink', () => {
         // DeleteObject to remove old key
         .mockResolvedValueOnce({})
 
-      mockGetSignedUrl.mockResolvedValueOnce(expectedUrl)
+      const result = await getReportFileKey('test-bucket', 2023, targetFileKey)
 
-      const result = await generatePresignedReportDownloadLink(
-        'test-bucket',
-        2023
-      )
-
-      expect(result).toBe(expectedUrl)
+      expect(result).toBe(targetFileKey)
 
       // Verify rename operations
       expect(mockCopyObjectCommand).toHaveBeenCalledWith({
@@ -229,77 +205,147 @@ describe('generatePresignedReportDownloadLink', () => {
         Bucket: 'test-bucket',
         Key: oldKey
       })
+    })
 
-      // Verify final presigned URL uses standard key
-      expect(mockGetObjectCommand).toHaveBeenCalledWith({
-        Bucket: 'test-bucket',
-        Key: targetFileKey
-      })
+    it('propagates unexpected HeadObject errors', async () => {
+      const targetFileKey = 'reports/uk_prtr_dataset_2023.xml'
+
+      // Create permission error (unexpected)
+      const permissionError = new Error('Access Denied')
+      permissionError.name = 'AccessDenied'
+
+      mockS3ClientInstance.send.mockRejectedValueOnce(permissionError)
+
+      await expect(getReportFileKey('test-bucket', 2023)).rejects.toThrow(
+        'Access Denied'
+      )
+
+      // Should not proceed to metadata search
+      expect(mockListObjectsCommand).not.toHaveBeenCalled()
     })
 
     it('throws S3BackendError when metadata search fails', async () => {
-      const searchError = new Error('Metadata search failed')
+      const notFoundError = new Error('The specified key does not exist.')
+      notFoundError.name = 'NoSuchKey'
 
       mockS3ClientInstance.send
-        .mockRejectedValueOnce(new Error('Not found')) // Standard location check
-        .mockRejectedValueOnce(searchError) // ListObjects fails during metadata search
+        .mockRejectedValueOnce(notFoundError)
+        .mockRejectedValueOnce(new Error('Metadata search failed'))
 
-      await expect(
-        generatePresignedReportDownloadLink('test-bucket', 2023)
-      ).rejects.toThrow('Failed to locate report file for year 2023')
+      await expect(getReportFileKey('test-bucket', 2023)).rejects.toThrow(
+        'Failed to locate report file for year 2023'
+      )
     })
 
     it('throws S3BackendError when rename operation fails', async () => {
       const oldKey = 'uploaded/uk_prtr_dataset_2023.xml'
-      const renameError = new Error('Copy operation failed')
+      const notFoundError = new Error('The specified key does not exist.')
+      notFoundError.name = 'NoSuchKey'
 
       mockS3ClientInstance.send
-        .mockRejectedValueOnce(new Error('Not found')) // Standard location check
+        .mockRejectedValueOnce(notFoundError)
         .mockResolvedValueOnce({
           Contents: [{ Key: oldKey }]
         })
         .mockResolvedValueOnce({
           Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' }
         })
-        .mockRejectedValueOnce(renameError) // CopyObject/rename fails
+        .mockRejectedValueOnce(new Error('Copy operation failed'))
 
-      await expect(
-        generatePresignedReportDownloadLink('test-bucket', 2023)
-      ).rejects.toThrow('Failed to locate report file for year 2023')
+      await expect(getReportFileKey('test-bucket', 2023)).rejects.toThrow(
+        'Failed to locate report file for year 2023'
+      )
     })
   })
 
   describe('error handling', () => {
-    it('throws S3BackendError when presigned URL generation fails', async () => {
-      mockS3ClientInstance.send.mockResolvedValueOnce({})
-      mockGetSignedUrl.mockRejectedValueOnce(
-        new Error('Invalid credentials')
-      )
+    it('includes year in error message', async () => {
+      const notFoundError = new Error('The specified key does not exist.')
+      notFoundError.name = 'NoSuchKey'
 
-      await expect(
-        generatePresignedReportDownloadLink('test-bucket', 2023)
-      ).rejects.toThrow('Failed to generate S3 download link')
-    })
-
-    it('handles different bucket names', async () => {
-      mockS3ClientInstance.send.mockResolvedValueOnce({})
-      mockGetSignedUrl.mockResolvedValueOnce('https://example.com/link')
-
-      await generatePresignedReportDownloadLink('production-bucket', 2023)
-
-      const headCall = mockHeadObjectCommand.mock.calls[0][0]
-      expect(headCall.Bucket).toBe('production-bucket')
-    })
-
-    it('includes year in error message for failed file location', async () => {
       mockS3ClientInstance.send
-        .mockRejectedValueOnce(new Error('Not found'))
-        .mockRejectedValueOnce(new Error('Metadata search error'))
+        .mockRejectedValueOnce(notFoundError)
+        .mockRejectedValueOnce(new Error('Search failed'))
 
       await expect(
-        generatePresignedReportDownloadLink('bucket', 2021)
+        getReportFileKey('bucket', 2021, 'reports/uk_prtr_dataset_2021.xml')
       ).rejects.toThrow('2021')
     })
+  })
+})
+
+describe('generatePresignedReportDownloadLink', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns presigned URL for report', async () => {
+    const expectedUrl =
+      'https://s3.amazonaws.com/bucket/reports/uk_prtr_dataset_2023.xml?signed'
+
+    // HeadObject succeeds - file found with target key
+    mockS3ClientInstance.send.mockResolvedValueOnce({})
+    mockGetSignedUrl.mockResolvedValueOnce(expectedUrl)
+
+    const result = await generatePresignedReportDownloadLink(
+      'test-bucket',
+      2023
+    )
+
+    expect(result).toBe(expectedUrl)
+  })
+
+  it('generates URL with correct expiry time', async () => {
+    mockS3ClientInstance.send.mockResolvedValueOnce({})
+    mockGetSignedUrl.mockResolvedValueOnce('https://example.com/url')
+
+    await generatePresignedReportDownloadLink('test-bucket', 2023)
+
+    const signUrlCall = mockGetSignedUrl.mock.calls[0]
+    expect(signUrlCall[2]).toEqual({ expiresIn: 9000 })
+  })
+
+  it('uses correct S3 key for GetObjectCommand', async () => {
+    mockS3ClientInstance.send.mockResolvedValueOnce({})
+    mockGetSignedUrl.mockResolvedValueOnce('https://example.com/url')
+
+    await generatePresignedReportDownloadLink('test-bucket', 2023)
+
+    expect(mockGetObjectCommand).toHaveBeenCalledWith({
+      Bucket: 'test-bucket',
+      Key: 'reports/uk_prtr_dataset_2023.xml'
+    })
+  })
+
+  it('throws S3BackendError when locateReportFile fails', async () => {
+    const notFoundError = new Error('The specified key does not exist.')
+    notFoundError.name = 'NoSuchKey'
+    mockS3ClientInstance.send
+      .mockRejectedValueOnce(notFoundError)
+      .mockRejectedValueOnce(new Error('Locate failed'))
+
+    await expect(
+      generatePresignedReportDownloadLink('test-bucket', 2023)
+    ).rejects.toThrow('Failed to locate report file for year 2023')
+  })
+
+  it('throws S3BackendError when presigned URL generation fails', async () => {
+    mockS3ClientInstance.send.mockResolvedValueOnce({})
+    mockGetSignedUrl.mockRejectedValueOnce(new Error('Invalid credentials'))
+
+    await expect(
+      generatePresignedReportDownloadLink('test-bucket', 2023)
+    ).rejects.toThrow('Failed to generate S3 download link')
+  })
+
+  it('handles different bucket names', async () => {
+    mockS3ClientInstance.send.mockResolvedValueOnce({})
+    mockGetSignedUrl.mockResolvedValueOnce('https://example.com/link')
+
+    await generatePresignedReportDownloadLink('production-bucket', 2023)
+
+    const headCall = mockHeadObjectCommand.mock.calls[0][0]
+    expect(headCall.Bucket).toBe('production-bucket')
   })
 })
 
