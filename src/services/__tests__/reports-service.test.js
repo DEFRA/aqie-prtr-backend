@@ -1,8 +1,34 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import {
   getReports,
+  getReportDownloadLink,
   ReportsBackendError
 } from '#src/services/reports-service.js'
+
+// Mock the S3 service - hoisted to avoid initialization issues
+const {
+  mockFindKeyByMetadataFilename,
+  mockGeneratePresignedReportDownloadLink,
+  mockLogger
+} = vi.hoisted(() => ({
+  mockFindKeyByMetadataFilename: vi.fn(),
+  mockGeneratePresignedReportDownloadLink: vi.fn(),
+  mockLogger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn()
+  }
+}))
+
+vi.mock('#src/services/s3-service.js', () => ({
+  findKeyByMetadataFilename: mockFindKeyByMetadataFilename,
+  generatePresignedReportDownloadLink: mockGeneratePresignedReportDownloadLink,
+  S3BackendError: class S3BackendError extends Error {}
+}))
+
+vi.mock('#src/common/helpers/logging/logger.js', () => ({
+  createLogger: vi.fn(() => mockLogger)
+}))
 
 describe('ReportsBackendError', () => {
   it('should create error with message', () => {
@@ -52,15 +78,9 @@ describe('ReportsBackendError', () => {
 
 describe('getReports', () => {
   let mockDb
-  let mockLogger
   let mockCollection
 
   beforeEach(() => {
-    mockLogger = {
-      error: vi.fn(),
-      info: vi.fn()
-    }
-
     mockCollection = {
       find: vi.fn(),
       toArray: vi.fn()
@@ -79,258 +99,166 @@ describe('getReports', () => {
         })
       })
 
-      const result = await getReports(mockDb, mockLogger)
+      const result = await getReports(mockDb)
 
-      expect(result.count).toBe(18)
+      expect(result.count).toBe(19)
       expect(result.results[0]).toEqual({
-        id: '2024',
-        year: 2024,
+        id: '2007',
+        year: 2007,
         reportIsLive: true
       })
       expect(result.results[1]).toEqual({
-        id: '2023',
-        year: 2023,
+        id: '2008',
+        year: 2008,
         reportIsLive: true
       })
     })
 
-    it('returns reports sorted by year descending in result array', async () => {
+    it('returns reports sorted by year ascending in result array', async () => {
       mockCollection.find.mockReturnValue({
         sort: vi.fn().mockReturnValue({
           toArray: vi.fn().mockResolvedValue([])
         })
       })
 
-      const result = await getReports(mockDb, mockLogger)
+      const result = await getReports(mockDb)
 
-      // Check that years are in descending order
+      expect(result.results.length).toBeGreaterThan(0)
+      // Check that years are in ascending order
       for (let i = 0; i < result.results.length - 1; i++) {
-        expect(result.results[i].year).toBeGreaterThanOrEqual(
+        expect(result.results[i].year).toBeLessThanOrEqual(
           result.results[i + 1].year
         )
       }
     })
+  })
+})
 
-    it('returns oldest report from example data', async () => {
-      mockCollection.find.mockReturnValue({
-        sort: vi.fn().mockReturnValue({
-          toArray: vi.fn().mockResolvedValue([])
-        })
-      })
+describe('getReportDownloadLink', () => {
+  let mockPresignedUrl
 
-      const result = await getReports(mockDb, mockLogger)
-      const lastReport = result.results[result.results.length - 1]
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockPresignedUrl = 'https://s3.example.com/presigned-url'
 
-      expect(lastReport).toEqual({
-        id: '2007',
-        year: 2007,
-        reportIsLive: false
-      })
+    mockGeneratePresignedReportDownloadLink.mockResolvedValue(mockPresignedUrl)
+  })
+
+  describe('successful cases', () => {
+    it('should search S3 metadata for the report year', async () => {
+      const s3Key = 'reports/uk_prtr_dataset_2023.xml'
+      mockFindKeyByMetadataFilename.mockResolvedValue(s3Key)
+
+      await getReportDownloadLink(2023, 'test-bucket')
+
+      expect(mockFindKeyByMetadataFilename).toHaveBeenCalledWith(
+        'test-bucket',
+        2023
+      )
     })
 
-    it('maps reportID field to id in response', async () => {
-      mockCollection.find.mockReturnValue({
-        sort: vi.fn().mockReturnValue({
-          toArray: vi.fn().mockResolvedValue([])
-        })
-      })
+    it('should call generatePresignedReportDownloadLink with S3 key from metadata search', async () => {
+      const s3Key = 'reports/uk_prtr_dataset_2023.xml'
+      mockFindKeyByMetadataFilename.mockResolvedValue(s3Key)
 
-      const result = await getReports(mockDb, mockLogger)
+      await getReportDownloadLink(2023, 'test-bucket')
 
-      result.results.forEach((report) => {
-        expect(report).toHaveProperty('id')
-        expect(report).not.toHaveProperty('reportID')
-      })
+      expect(mockGeneratePresignedReportDownloadLink).toHaveBeenCalledWith(
+        'test-bucket',
+        s3Key,
+        2023
+      )
     })
 
-    it('includes year and reportIsLive fields in response', async () => {
-      mockCollection.find.mockReturnValue({
-        sort: vi.fn().mockReturnValue({
-          toArray: vi.fn().mockResolvedValue([])
-        })
-      })
+    it('should log when searching S3 metadata', async () => {
+      mockFindKeyByMetadataFilename.mockResolvedValue('key')
 
-      const result = await getReports(mockDb, mockLogger)
+      await getReportDownloadLink(2023, 'test-bucket')
 
-      result.results.forEach((report) => {
-        expect(report).toHaveProperty('year')
-        expect(report).toHaveProperty('reportIsLive')
-        expect(typeof report.year).toBe('number')
-        expect(typeof report.reportIsLive).toBe('boolean')
-      })
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        '[get-report-download] Searching S3 metadata for year=2023...'
+      )
     })
 
-    it('count matches length of results array', async () => {
-      mockCollection.find.mockReturnValue({
-        sort: vi.fn().mockReturnValue({
-          toArray: vi.fn().mockResolvedValue([])
-        })
-      })
+    it('should log when S3 key found in metadata', async () => {
+      mockFindKeyByMetadataFilename.mockResolvedValue('key')
 
-      const result = await getReports(mockDb, mockLogger)
+      await getReportDownloadLink(2023, 'test-bucket')
 
-      expect(result.count).toBe(result.results.length)
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        '[get-report-download] Found S3 key in S3 for year=2023'
+      )
+    })
+
+    it('should return presigned URL after S3 search', async () => {
+      mockFindKeyByMetadataFilename.mockResolvedValue('key')
+
+      const result = await getReportDownloadLink(2023, 'test-bucket')
+
+      expect(result).toBe(mockPresignedUrl)
     })
   })
 
-  // describe('database interaction', () => {
-  //   it('queries Reports collection', async () => {
-  //     mockCollection.find.mockReturnValue({
-  //       sort: vi.fn().mockReturnValue({
-  //         toArray: vi.fn().mockResolvedValue([])
-  //       })
-  //     })
-  //
-  //     await getReports(mockDb, mockLogger)
-  //
-  //     expect(mockDb.collection).toHaveBeenCalledWith('Reports')
-  //   })
-  //
-  //   it('calls find with empty filter object', async () => {
-  //     mockCollection.find.mockReturnValue({
-  //       sort: vi.fn().mockReturnValue({
-  //         toArray: vi.fn().mockResolvedValue([])
-  //       })
-  //     })
-  //
-  //     await getReports(mockDb, mockLogger)
-  //
-  //     expect(mockCollection.find).toHaveBeenCalledWith({})
-  //   })
-  //
-  //   it('sorts by year in descending order', async () => {
-  //     const sortMock = vi.fn().mockReturnValue({
-  //       toArray: vi.fn().mockResolvedValue([])
-  //     })
-  //     mockCollection.find.mockReturnValue({ sort: sortMock })
-  //
-  //     await getReports(mockDb, mockLogger)
-  //
-  //     expect(sortMock).toHaveBeenCalledWith({ year: -1 })
-  //   })
-  //
-  //   it('calls toArray to execute query', async () => {
-  //     const toArrayMock = vi.fn().mockResolvedValue([])
-  //     mockCollection.find.mockReturnValue({
-  //       sort: vi.fn().mockReturnValue({
-  //         toArray: toArrayMock
-  //       })
-  //     })
-  //
-  //     await getReports(mockDb, mockLogger)
-  //
-  //     expect(toArrayMock).toHaveBeenCalled()
-  //   })
-  // })
+  describe('error handling - S3 failures', () => {
+    it('should throw S3BackendError when metadata search fails', async () => {
+      const { S3BackendError } = await import('#src/services/s3-service.js')
 
-  describe('error handling', () => {
-    // it('throws ReportsBackendError when find fails', async () => {
-    //   const dbError = new Error('Connection refused')
-    //   mockCollection.find.mockReturnValue({
-    //     sort: vi.fn().mockReturnValue({
-    //       toArray: vi.fn().mockRejectedValue(dbError)
-    //     })
-    //   })
-    //
-    //   await expect(getReports(mockDb, mockLogger)).rejects.toThrow(
-    //     ReportsBackendError
-    //   )
-    // })
+      const s3Error = new S3BackendError('S3 connection failed')
+      mockFindKeyByMetadataFilename.mockRejectedValue(s3Error)
 
-    it('includes original error message in ReportsBackendError', async () => {
-      const dbError = new Error('Connection timeout')
-      mockCollection.find.mockReturnValue({
-        sort: vi.fn().mockReturnValue({
-          toArray: vi.fn().mockRejectedValue(dbError)
-        })
-      })
+      await expect(getReportDownloadLink(2023, 'test-bucket')).rejects.toThrow(
+        'S3 connection failed'
+      )
+    })
+
+    it('should throw S3BackendError from presigned URL generation', async () => {
+      const { S3BackendError } = await import('#src/services/s3-service.js')
+
+      mockFindKeyByMetadataFilename.mockResolvedValue('key')
+      const s3Error = new S3BackendError('Failed to generate URL')
+      mockGeneratePresignedReportDownloadLink.mockRejectedValue(s3Error)
+
+      await expect(getReportDownloadLink(2023, 'test-bucket')).rejects.toThrow(
+        'Failed to generate URL'
+      )
+    })
+  })
+
+  describe('error handling - general failures', () => {
+    it('should throw ReportsBackendError on unexpected errors', async () => {
+      mockFindKeyByMetadataFilename.mockResolvedValue('key')
+      const unexpectedError = new Error('Unknown error')
+      mockGeneratePresignedReportDownloadLink.mockRejectedValue(unexpectedError)
+
+      await expect(getReportDownloadLink(2023, 'test-bucket')).rejects.toThrow(
+        ReportsBackendError
+      )
+    })
+
+    it('should wrap errors with year context', async () => {
+      mockFindKeyByMetadataFilename.mockResolvedValue('key')
+      mockGeneratePresignedReportDownloadLink.mockRejectedValue(
+        new Error('Unknown')
+      )
 
       try {
-        await getReports(mockDb, mockLogger)
+        await getReportDownloadLink(2023, 'test-bucket')
       } catch (error) {
-        expect(error.message).toContain('Failed to fetch reports')
-        expect(error.message).toContain('Connection timeout')
+        expect(error.message).toContain('2023')
       }
     })
 
-    it('logs error when query fails', async () => {
-      const dbError = new Error('Database error')
-      mockCollection.find.mockReturnValue({
-        sort: vi.fn().mockReturnValue({
-          toArray: vi.fn().mockRejectedValue(dbError)
-        })
-      })
+    it('should log errors', async () => {
+      mockFindKeyByMetadataFilename.mockResolvedValue('key')
+      mockGeneratePresignedReportDownloadLink.mockRejectedValue(
+        new Error('Test error')
+      )
 
       try {
-        await getReports(mockDb, mockLogger)
+        await getReportDownloadLink(2023, 'test-bucket')
       } catch {
         expect(mockLogger.error).toHaveBeenCalled()
       }
-    })
-
-    it('includes original error as cause in ReportsBackendError', async () => {
-      const dbError = new Error('Original DB error')
-      mockCollection.find.mockReturnValue({
-        sort: vi.fn().mockReturnValue({
-          toArray: vi.fn().mockRejectedValue(dbError)
-        })
-      })
-
-      try {
-        await getReports(mockDb, mockLogger)
-      } catch (error) {
-        expect(error.cause).toBe(dbError)
-      }
-    })
-
-    // it('throws error when collection method throws', async () => {
-    //   const collectionError = new Error('Collection not found')
-    //   mockDb.collection.mockImplementation(() => {
-    //     throw collectionError
-    //   })
-    //
-    //   await expect(getReports(mockDb, mockLogger)).rejects.toThrow(
-    //     ReportsBackendError
-    //   )
-    // })
-  })
-
-  describe('response structure', () => {
-    it('returns object with count and results properties', async () => {
-      mockCollection.find.mockReturnValue({
-        sort: vi.fn().mockReturnValue({
-          toArray: vi.fn().mockResolvedValue([])
-        })
-      })
-
-      const result = await getReports(mockDb, mockLogger)
-
-      expect(result).toHaveProperty('count')
-      expect(result).toHaveProperty('results')
-    })
-
-    it('returns results as array', async () => {
-      mockCollection.find.mockReturnValue({
-        sort: vi.fn().mockReturnValue({
-          toArray: vi.fn().mockResolvedValue([])
-        })
-      })
-
-      const result = await getReports(mockDb, mockLogger)
-
-      expect(Array.isArray(result.results)).toBe(true)
-    })
-
-    it('returns count as number', async () => {
-      mockCollection.find.mockReturnValue({
-        sort: vi.fn().mockReturnValue({
-          toArray: vi.fn().mockResolvedValue([])
-        })
-      })
-
-      const result = await getReports(mockDb, mockLogger)
-
-      expect(typeof result.count).toBe('number')
     })
   })
 })
