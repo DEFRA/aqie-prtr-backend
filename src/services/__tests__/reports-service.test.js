@@ -136,79 +136,23 @@ describe('getReports', () => {
 
 describe('getReportDownloadLink', () => {
   let mockDb
-  let mockReportsCollection
   let mockPresignedUrl
 
   beforeEach(() => {
     vi.clearAllMocks()
     mockPresignedUrl = 'https://s3.example.com/presigned-url'
 
-    mockReportsCollection = {
-      findOne: vi.fn(),
-      updateOne: vi.fn()
-    }
-
-    mockDb = {
-      collection: vi.fn().mockReturnValue(mockReportsCollection)
-    }
+    mockDb = {}
 
     mockGeneratePresignedReportDownloadLink.mockResolvedValue(mockPresignedUrl)
   })
 
-  describe('successful cases - DB hit', () => {
-    it('should find S3 key in database and use it directly', async () => {
-      const s3Key = 'reports/uk_prtr_dataset_2023.xml'
-      mockReportsCollection.findOne.mockResolvedValue({ year: 2023, s3Key })
-
-      const result = await getReportDownloadLink(mockDb, 2023, 'test-bucket')
-
-      expect(result).toBe(mockPresignedUrl)
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        '[get-report-download] Found S3 key in DB for year=2023'
-      )
-    })
-
-    it('should call generatePresignedReportDownloadLink with correct parameters', async () => {
-      const s3Key = 'reports/uk_prtr_dataset_2023.xml'
-      mockReportsCollection.findOne.mockResolvedValue({ year: 2023, s3Key })
-
-      await getReportDownloadLink(mockDb, 2023, 'test-bucket')
-
-      expect(mockGeneratePresignedReportDownloadLink).toHaveBeenCalledWith(
-        'test-bucket',
-        s3Key,
-        2023
-      )
-    })
-
-    it('should not search S3 if key found in DB', async () => {
-      const s3Key = 'reports/uk_prtr_dataset_2023.xml'
-      mockReportsCollection.findOne.mockResolvedValue({ year: 2023, s3Key })
-
-      await getReportDownloadLink(mockDb, 2023, 'test-bucket')
-
-      expect(mockFindKeyByMetadataFilename).not.toHaveBeenCalled()
-    })
-
-    it('should return presigned URL on DB hit', async () => {
-      mockReportsCollection.findOne.mockResolvedValue({
-        year: 2023,
-        s3Key: 'key'
-      })
-
-      const result = await getReportDownloadLink(mockDb, 2023, 'test-bucket')
-
-      expect(result).toBe(mockPresignedUrl)
-    })
-  })
-
-  describe('successful cases - S3 fallback', () => {
-    it('should search S3 when key not in database', async () => {
-      mockReportsCollection.findOne.mockResolvedValue({ year: 2023 }) // no s3Key
+  describe('successful cases', () => {
+    it('should search S3 metadata for the report year', async () => {
       const s3Key = 'reports/uk_prtr_dataset_2023.xml'
       mockFindKeyByMetadataFilename.mockResolvedValue(s3Key)
 
-      await getReportDownloadLink(mockDb, 2023, 'test-bucket')
+      await getReportDownloadLink(2023, 'test-bucket')
 
       expect(mockFindKeyByMetadataFilename).toHaveBeenCalledWith(
         'test-bucket',
@@ -217,11 +161,10 @@ describe('getReportDownloadLink', () => {
     })
 
     it('should call generatePresignedReportDownloadLink with S3 key from metadata search', async () => {
-      mockReportsCollection.findOne.mockResolvedValue({ year: 2023 })
       const s3Key = 'reports/uk_prtr_dataset_2023.xml'
       mockFindKeyByMetadataFilename.mockResolvedValue(s3Key)
 
-      await getReportDownloadLink(mockDb, 2023, 'test-bucket')
+      await getReportDownloadLink(2023, 'test-bucket')
 
       expect(mockGeneratePresignedReportDownloadLink).toHaveBeenCalledWith(
         'test-bucket',
@@ -231,21 +174,19 @@ describe('getReportDownloadLink', () => {
     })
 
     it('should log when searching S3 metadata', async () => {
-      mockReportsCollection.findOne.mockResolvedValue({ year: 2023 })
       mockFindKeyByMetadataFilename.mockResolvedValue('key')
 
-      await getReportDownloadLink(mockDb, 2023, 'test-bucket')
+      await getReportDownloadLink(2023, 'test-bucket')
 
       expect(mockLogger.info).toHaveBeenCalledWith(
-        '[get-report-download] S3 key not in DB for year=2023, searching S3 metadata...'
+        '[get-report-download] Searching S3 metadata for year=2023...'
       )
     })
 
     it('should log when S3 key found in metadata', async () => {
-      mockReportsCollection.findOne.mockResolvedValue({ year: 2023 })
       mockFindKeyByMetadataFilename.mockResolvedValue('key')
 
-      await getReportDownloadLink(mockDb, 2023, 'test-bucket')
+      await getReportDownloadLink(2023, 'test-bucket')
 
       expect(mockLogger.info).toHaveBeenCalledWith(
         '[get-report-download] Found S3 key in S3 for year=2023'
@@ -253,45 +194,11 @@ describe('getReportDownloadLink', () => {
     })
 
     it('should return presigned URL after S3 search', async () => {
-      mockReportsCollection.findOne.mockResolvedValue({ year: 2023 })
       mockFindKeyByMetadataFilename.mockResolvedValue('key')
 
-      const result = await getReportDownloadLink(mockDb, 2023, 'test-bucket')
+      const result = await getReportDownloadLink(2023, 'test-bucket')
 
       expect(result).toBe(mockPresignedUrl)
-    })
-  })
-
-  describe('database lookup failure handling', () => {
-    it('should handle database lookup errors gracefully', async () => {
-      const dbError = new Error('Database connection failed')
-      mockReportsCollection.findOne.mockRejectedValue(dbError)
-      mockFindKeyByMetadataFilename.mockResolvedValue('key')
-
-      await getReportDownloadLink(mockDb, 2023, 'test-bucket')
-
-      expect(mockLogger.warn).toHaveBeenCalled()
-    })
-
-    it('should fall back to S3 search on DB error', async () => {
-      mockReportsCollection.findOne.mockRejectedValue(new Error('DB error'))
-      mockFindKeyByMetadataFilename.mockResolvedValue('key')
-
-      await getReportDownloadLink(mockDb, 2023, 'test-bucket')
-
-      expect(mockFindKeyByMetadataFilename).toHaveBeenCalled()
-    })
-
-    it('should log warning when DB lookup fails', async () => {
-      const dbError = new Error('Database connection failed')
-      mockReportsCollection.findOne.mockRejectedValue(dbError)
-      mockFindKeyByMetadataFilename.mockResolvedValue('key')
-
-      await getReportDownloadLink(mockDb, 2023, 'test-bucket')
-
-      const warnCall = mockLogger.warn.mock.calls[0][0]
-      expect(warnCall).toContain('Database lookup failed')
-      expect(warnCall).toContain('year=2023')
     })
   })
 
@@ -299,66 +206,59 @@ describe('getReportDownloadLink', () => {
     it('should throw S3BackendError when metadata search fails', async () => {
       const { S3BackendError } = await import('#src/services/s3-service.js')
 
-      mockReportsCollection.findOne.mockResolvedValue({ year: 2023 })
       const s3Error = new S3BackendError('S3 connection failed')
       mockFindKeyByMetadataFilename.mockRejectedValue(s3Error)
 
-      await expect(
-        getReportDownloadLink(mockDb, 2023, 'test-bucket')
-      ).rejects.toThrow('S3 connection failed')
+      await expect(getReportDownloadLink(2023, 'test-bucket')).rejects.toThrow(
+        'S3 connection failed'
+      )
     })
 
     it('should throw S3BackendError from presigned URL generation', async () => {
       const { S3BackendError } = await import('#src/services/s3-service.js')
 
-      mockReportsCollection.findOne.mockResolvedValue({
-        year: 2023,
-        s3Key: 'key'
-      })
+      mockFindKeyByMetadataFilename.mockResolvedValue('key')
       const s3Error = new S3BackendError('Failed to generate URL')
       mockGeneratePresignedReportDownloadLink.mockRejectedValue(s3Error)
 
-      await expect(
-        getReportDownloadLink(mockDb, 2023, 'test-bucket')
-      ).rejects.toThrow('Failed to generate URL')
+      await expect(getReportDownloadLink(2023, 'test-bucket')).rejects.toThrow(
+        'Failed to generate URL'
+      )
     })
   })
 
   describe('error handling - general failures', () => {
     it('should throw ReportsBackendError on unexpected errors', async () => {
-      mockReportsCollection.findOne.mockResolvedValue({ year: 2023 })
       mockFindKeyByMetadataFilename.mockResolvedValue('key')
       const unexpectedError = new Error('Unknown error')
       mockGeneratePresignedReportDownloadLink.mockRejectedValue(unexpectedError)
 
-      await expect(
-        getReportDownloadLink(mockDb, 2023, 'test-bucket')
-      ).rejects.toThrow(ReportsBackendError)
+      await expect(getReportDownloadLink(2023, 'test-bucket')).rejects.toThrow(
+        ReportsBackendError
+      )
     })
 
     it('should wrap errors with year context', async () => {
-      mockReportsCollection.findOne.mockResolvedValue({ year: 2023 })
       mockFindKeyByMetadataFilename.mockResolvedValue('key')
       mockGeneratePresignedReportDownloadLink.mockRejectedValue(
         new Error('Unknown')
       )
 
       try {
-        await getReportDownloadLink(mockDb, 2023, 'test-bucket')
+        await getReportDownloadLink(2023, 'test-bucket')
       } catch (error) {
         expect(error.message).toContain('2023')
       }
     })
 
     it('should log errors', async () => {
-      mockReportsCollection.findOne.mockResolvedValue({ year: 2023 })
       mockFindKeyByMetadataFilename.mockResolvedValue('key')
       mockGeneratePresignedReportDownloadLink.mockRejectedValue(
         new Error('Test error')
       )
 
       try {
-        await getReportDownloadLink(mockDb, 2023, 'test-bucket')
+        await getReportDownloadLink(2023, 'test-bucket')
       } catch {
         expect(mockLogger.error).toHaveBeenCalled()
       }
