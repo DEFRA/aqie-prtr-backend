@@ -6,6 +6,8 @@ const {
   mockListObjectsCommand,
   mockGetObjectCommand,
   mockHeadObjectCommand,
+  mockCopyObjectCommand,
+  mockDeleteObjectCommand,
   mockGetSignedUrl
 } = vi.hoisted(() => ({
   mockS3ClientInstance: {
@@ -14,6 +16,8 @@ const {
   mockListObjectsCommand: vi.fn(),
   mockGetObjectCommand: vi.fn(),
   mockHeadObjectCommand: vi.fn(),
+  mockCopyObjectCommand: vi.fn(),
+  mockDeleteObjectCommand: vi.fn(),
   mockGetSignedUrl: vi.fn()
 }))
 
@@ -29,7 +33,9 @@ vi.mock('@aws-sdk/client-s3', () => {
     S3Client: MockS3Client,
     ListObjectsV2Command: mockListObjectsCommand,
     GetObjectCommand: mockGetObjectCommand,
-    HeadObjectCommand: mockHeadObjectCommand
+    HeadObjectCommand: mockHeadObjectCommand,
+    CopyObjectCommand: mockCopyObjectCommand,
+    DeleteObjectCommand: mockDeleteObjectCommand
   }
 })
 
@@ -130,99 +136,170 @@ describe('generatePresignedReportDownloadLink', () => {
     vi.clearAllMocks()
   })
 
-  it('generates presigned URL with correct expiry', async () => {
-    const expectedUrl =
-      'https://s3.amazonaws.com/bucket/reports/uk_prtr_dataset_2023.xml?signed'
-    mockGetSignedUrl.mockResolvedValue(expectedUrl)
+  describe('when file exists at standard location', () => {
+    it('generates presigned URL without searching metadata', async () => {
+      const expectedUrl =
+        'https://s3.amazonaws.com/bucket/reports/uk_prtr_dataset_2023.xml?signed'
+      const targetFileKey = 'reports/uk_prtr_dataset_2023.xml'
 
-    const result = await generatePresignedReportDownloadLink(
-      'test-bucket',
-      'reports/uk_prtr_dataset_2023.xml',
-      2023
-    )
+      // HeadObject succeeds - file exists at standard location
+      mockS3ClientInstance.send.mockResolvedValueOnce({})
+      mockGetSignedUrl.mockResolvedValue(expectedUrl)
 
-    expect(result).toBe(expectedUrl)
-    expect(mockGetSignedUrl).toHaveBeenCalledWith(
-      mockS3ClientInstance,
-      expect.any(Object),
-      { expiresIn: 9000 }
-    )
-  })
+      const result = await generatePresignedReportDownloadLink(
+        'test-bucket',
+        2023
+      )
 
-  it('creates GetObjectCommand with correct file key', async () => {
-    mockGetSignedUrl.mockResolvedValue('https://example.com/link')
+      expect(result).toBe(expectedUrl)
+      // Verify HeadObject was called to check standard location
+      expect(mockHeadObjectCommand).toHaveBeenCalledWith({
+        Bucket: 'test-bucket',
+        Key: targetFileKey
+      })
+      // Verify GetObjectCommand uses the standard key
+      expect(mockGetObjectCommand).toHaveBeenCalledWith({
+        Bucket: 'test-bucket',
+        Key: targetFileKey
+      })
+      // Should not call ListObjectsV2 (no metadata search needed)
+      expect(mockListObjectsCommand).not.toHaveBeenCalled()
+    })
 
-    await generatePresignedReportDownloadLink(
-      'test-bucket',
-      'reports/uk_prtr_dataset_2022.xml',
-      2022
-    )
+    it('uses correct standard filename format with year', async () => {
+      mockS3ClientInstance.send.mockResolvedValueOnce({})
+      mockGetSignedUrl.mockResolvedValue('https://example.com/link')
 
-    expect(mockGetObjectCommand).toHaveBeenCalledWith({
-      Bucket: 'test-bucket',
-      Key: 'reports/uk_prtr_dataset_2022.xml'
+      await generatePresignedReportDownloadLink('bucket', 2022)
+
+      const headCall = mockHeadObjectCommand.mock.calls[0][0]
+      expect(headCall.Key).toBe('reports/uk_prtr_dataset_2022.xml')
+    })
+
+    it('uses 150 minutes (9000 seconds) as presigned URL expiry', async () => {
+      mockS3ClientInstance.send.mockResolvedValueOnce({})
+      mockGetSignedUrl.mockResolvedValue('https://example.com/link')
+
+      await generatePresignedReportDownloadLink('test-bucket', 2023)
+
+      const signUrlCall = mockGetSignedUrl.mock.calls[0]
+      expect(signUrlCall[2]).toEqual({ expiresIn: 9000 })
     })
   })
 
-  it('uses file key directly from parameter', async () => {
-    mockGetSignedUrl.mockResolvedValue('https://example.com/link')
+  describe('when file not at standard location - search by metadata', () => {
+    it('searches metadata and renames file to standard location', async () => {
+      const oldKey = 'uploaded/uk_prtr_dataset_2023.xml'
+      const targetFileKey = 'reports/uk_prtr_dataset_2023.xml'
+      const expectedUrl = 'https://example.com/presigned-link'
 
-    const testKey = 'custom/path/file.xml'
-    await generatePresignedReportDownloadLink('my-bucket', testKey, 2021)
+      // HeadObject fails - file not at standard location
+      mockS3ClientInstance.send
+        .mockRejectedValueOnce(new Error('Not found'))
+        // ListObjects for metadata search
+        .mockResolvedValueOnce({
+          Contents: [{ Key: oldKey }]
+        })
+        // HeadObject to check metadata
+        .mockResolvedValueOnce({
+          Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' }
+        })
+        // CopyObject to rename file
+        .mockResolvedValueOnce({})
+        // DeleteObject to remove old key
+        .mockResolvedValueOnce({})
 
-    const callArgs = mockGetObjectCommand.mock.calls[0][0]
-    expect(callArgs.Key).toBe(testKey)
+      mockGetSignedUrl.mockResolvedValueOnce(expectedUrl)
+
+      const result = await generatePresignedReportDownloadLink(
+        'test-bucket',
+        2023
+      )
+
+      expect(result).toBe(expectedUrl)
+
+      // Verify rename operations
+      expect(mockCopyObjectCommand).toHaveBeenCalledWith({
+        Bucket: 'test-bucket',
+        CopySource: 'test-bucket/' + oldKey,
+        Key: targetFileKey,
+        MetadataDirective: 'COPY'
+      })
+      expect(mockDeleteObjectCommand).toHaveBeenCalledWith({
+        Bucket: 'test-bucket',
+        Key: oldKey
+      })
+
+      // Verify final presigned URL uses standard key
+      expect(mockGetObjectCommand).toHaveBeenCalledWith({
+        Bucket: 'test-bucket',
+        Key: targetFileKey
+      })
+    })
+
+    it('throws S3BackendError when metadata search fails', async () => {
+      const searchError = new Error('Metadata search failed')
+
+      mockS3ClientInstance.send
+        .mockRejectedValueOnce(new Error('Not found')) // Standard location check
+        .mockRejectedValueOnce(searchError) // ListObjects fails during metadata search
+
+      await expect(
+        generatePresignedReportDownloadLink('test-bucket', 2023)
+      ).rejects.toThrow('Failed to locate report file for year 2023')
+    })
+
+    it('throws S3BackendError when rename operation fails', async () => {
+      const oldKey = 'uploaded/uk_prtr_dataset_2023.xml'
+      const renameError = new Error('Copy operation failed')
+
+      mockS3ClientInstance.send
+        .mockRejectedValueOnce(new Error('Not found')) // Standard location check
+        .mockResolvedValueOnce({
+          Contents: [{ Key: oldKey }]
+        })
+        .mockResolvedValueOnce({
+          Metadata: { encodedfilename: 'uk_prtr_dataset_2023.xml' }
+        })
+        .mockRejectedValueOnce(renameError) // CopyObject/rename fails
+
+      await expect(
+        generatePresignedReportDownloadLink('test-bucket', 2023)
+      ).rejects.toThrow('Failed to locate report file for year 2023')
+    })
   })
 
-  it('throws error with message when URL generation fails', async () => {
-    const signError = new Error('Invalid bucket')
-    mockGetSignedUrl.mockRejectedValue(signError)
+  describe('error handling', () => {
+    it('throws S3BackendError when presigned URL generation fails', async () => {
+      mockS3ClientInstance.send.mockResolvedValueOnce({})
+      mockGetSignedUrl.mockRejectedValueOnce(
+        new Error('Invalid credentials')
+      )
 
-    await expect(
-      generatePresignedReportDownloadLink('test-bucket', 'file.xml', 2023)
-    ).rejects.toThrow('Failed to generate S3 download link: Invalid bucket')
-  })
+      await expect(
+        generatePresignedReportDownloadLink('test-bucket', 2023)
+      ).rejects.toThrow('Failed to generate S3 download link')
+    })
 
-  it('handles different bucket names', async () => {
-    mockGetSignedUrl.mockResolvedValue('https://example.com/link')
+    it('handles different bucket names', async () => {
+      mockS3ClientInstance.send.mockResolvedValueOnce({})
+      mockGetSignedUrl.mockResolvedValueOnce('https://example.com/link')
 
-    await generatePresignedReportDownloadLink(
-      'production-bucket',
-      'file.xml',
-      2023
-    )
+      await generatePresignedReportDownloadLink('production-bucket', 2023)
 
-    expect(mockGetObjectCommand).toHaveBeenCalledWith(
-      expect.objectContaining({ Bucket: 'production-bucket' })
-    )
-  })
+      const headCall = mockHeadObjectCommand.mock.calls[0][0]
+      expect(headCall.Bucket).toBe('production-bucket')
+    })
 
-  it('uses 150 minutes (9000 seconds) as presigned URL expiry', async () => {
-    mockGetSignedUrl.mockResolvedValue('https://example.com/link')
+    it('includes year in error message for failed file location', async () => {
+      mockS3ClientInstance.send
+        .mockRejectedValueOnce(new Error('Not found'))
+        .mockRejectedValueOnce(new Error('Metadata search error'))
 
-    await generatePresignedReportDownloadLink('test-bucket', 'file.xml', 2023)
-
-    // Verify the expiresIn value matches 150 minutes = 9000 seconds
-    const callArgs = mockGetSignedUrl.mock.calls[0][2]
-    expect(callArgs.expiresIn).toBe(9000)
-  })
-
-  it('throws error when getSignedUrl throws with generic message', async () => {
-    const signError = new Error('Connection timeout')
-    mockGetSignedUrl.mockRejectedValue(signError)
-
-    await expect(
-      generatePresignedReportDownloadLink('test-bucket', 'file.xml', 2023)
-    ).rejects.toThrow('Failed to generate S3 download link')
-  })
-
-  it('handles numeric year parameter', async () => {
-    mockGetSignedUrl.mockResolvedValue('https://example.com/link')
-
-    await generatePresignedReportDownloadLink('test-bucket', 'file.xml', 2020)
-
-    // Year is just used for logging, verify the function returns a URL
-    expect(mockGetSignedUrl).toHaveBeenCalled()
+      await expect(
+        generatePresignedReportDownloadLink('bucket', 2021)
+      ).rejects.toThrow('2021')
+    })
   })
 })
 

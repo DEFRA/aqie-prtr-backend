@@ -7,11 +7,9 @@ import {
 
 // Mock the S3 service - hoisted to avoid initialization issues
 const {
-  mockFindKeyByMetadataFilename,
   mockGeneratePresignedReportDownloadLink,
   mockLogger
 } = vi.hoisted(() => ({
-  mockFindKeyByMetadataFilename: vi.fn(),
   mockGeneratePresignedReportDownloadLink: vi.fn(),
   mockLogger: {
     info: vi.fn(),
@@ -21,7 +19,6 @@ const {
 }))
 
 vi.mock('#src/services/s3-service.js', () => ({
-  findKeyByMetadataFilename: mockFindKeyByMetadataFilename,
   generatePresignedReportDownloadLink: mockGeneratePresignedReportDownloadLink,
   S3BackendError: class S3BackendError extends Error {}
 }))
@@ -148,76 +145,52 @@ describe('getReportDownloadLink', () => {
   })
 
   describe('successful cases', () => {
-    it('should search S3 metadata for the report year', async () => {
-      const s3Key = 'reports/uk_prtr_dataset_2023.xml'
-      mockFindKeyByMetadataFilename.mockResolvedValue(s3Key)
-
-      await getReportDownloadLink(2023, 'test-bucket')
-
-      expect(mockFindKeyByMetadataFilename).toHaveBeenCalledWith(
-        'test-bucket',
-        2023
-      )
-    })
-
-    it('should call generatePresignedReportDownloadLink with S3 key from metadata search', async () => {
-      const s3Key = 'reports/uk_prtr_dataset_2023.xml'
-      mockFindKeyByMetadataFilename.mockResolvedValue(s3Key)
-
+    it('should call generatePresignedReportDownloadLink with bucket and year', async () => {
       await getReportDownloadLink(2023, 'test-bucket')
 
       expect(mockGeneratePresignedReportDownloadLink).toHaveBeenCalledWith(
         'test-bucket',
-        s3Key,
         2023
       )
     })
 
-    it('should log when searching S3 metadata', async () => {
-      mockFindKeyByMetadataFilename.mockResolvedValue('key')
-
-      await getReportDownloadLink(2023, 'test-bucket')
-
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        '[get-report-download] Searching S3 metadata for year=2023...'
-      )
-    })
-
-    it('should log when S3 key found in metadata', async () => {
-      mockFindKeyByMetadataFilename.mockResolvedValue('key')
-
-      await getReportDownloadLink(2023, 'test-bucket')
-
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        '[get-report-download] Found S3 key in S3 for year=2023'
-      )
-    })
-
-    it('should return presigned URL after S3 search', async () => {
-      mockFindKeyByMetadataFilename.mockResolvedValue('key')
-
+    it('should return presigned URL from generatePresignedReportDownloadLink', async () => {
       const result = await getReportDownloadLink(2023, 'test-bucket')
 
       expect(result).toBe(mockPresignedUrl)
     })
-  })
 
-  describe('error handling - S3 failures', () => {
-    it('should throw S3BackendError when metadata search fails', async () => {
-      const { S3BackendError } = await import('#src/services/s3-service.js')
+    it('should log when generating download link', async () => {
+      await getReportDownloadLink(2023, 'test-bucket')
 
-      const s3Error = new S3BackendError('S3 connection failed')
-      mockFindKeyByMetadataFilename.mockRejectedValue(s3Error)
-
-      await expect(getReportDownloadLink(2023, 'test-bucket')).rejects.toThrow(
-        'S3 connection failed'
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        '[get-report-download] Generating download link for year=2023'
       )
     })
 
+    it('should handle different years', async () => {
+      await getReportDownloadLink(2021, 'test-bucket')
+
+      expect(mockGeneratePresignedReportDownloadLink).toHaveBeenCalledWith(
+        'test-bucket',
+        2021
+      )
+    })
+
+    it('should handle different bucket names', async () => {
+      await getReportDownloadLink(2023, 'production-bucket')
+
+      expect(mockGeneratePresignedReportDownloadLink).toHaveBeenCalledWith(
+        'production-bucket',
+        2023
+      )
+    })
+  })
+
+  describe('error handling - S3 failures', () => {
     it('should throw S3BackendError from presigned URL generation', async () => {
       const { S3BackendError } = await import('#src/services/s3-service.js')
 
-      mockFindKeyByMetadataFilename.mockResolvedValue('key')
       const s3Error = new S3BackendError('Failed to generate URL')
       mockGeneratePresignedReportDownloadLink.mockRejectedValue(s3Error)
 
@@ -225,11 +198,24 @@ describe('getReportDownloadLink', () => {
         'Failed to generate URL'
       )
     })
+
+    it('should re-throw S3BackendError without wrapping', async () => {
+      const { S3BackendError } = await import('#src/services/s3-service.js')
+
+      const s3Error = new S3BackendError('S3 connection failed', { status: 502 })
+      mockGeneratePresignedReportDownloadLink.mockRejectedValue(s3Error)
+
+      try {
+        await getReportDownloadLink(2023, 'test-bucket')
+      } catch (error) {
+        expect(error).toBeInstanceOf(S3BackendError)
+        expect(error.status).toBe(502)
+      }
+    })
   })
 
   describe('error handling - general failures', () => {
     it('should throw ReportsBackendError on unexpected errors', async () => {
-      mockFindKeyByMetadataFilename.mockResolvedValue('key')
       const unexpectedError = new Error('Unknown error')
       mockGeneratePresignedReportDownloadLink.mockRejectedValue(unexpectedError)
 
@@ -239,7 +225,6 @@ describe('getReportDownloadLink', () => {
     })
 
     it('should wrap errors with year context', async () => {
-      mockFindKeyByMetadataFilename.mockResolvedValue('key')
       mockGeneratePresignedReportDownloadLink.mockRejectedValue(
         new Error('Unknown')
       )
@@ -252,7 +237,6 @@ describe('getReportDownloadLink', () => {
     })
 
     it('should log errors', async () => {
-      mockFindKeyByMetadataFilename.mockResolvedValue('key')
       mockGeneratePresignedReportDownloadLink.mockRejectedValue(
         new Error('Test error')
       )
@@ -261,6 +245,18 @@ describe('getReportDownloadLink', () => {
         await getReportDownloadLink(2023, 'test-bucket')
       } catch {
         expect(mockLogger.error).toHaveBeenCalled()
+      }
+    })
+
+    it('should include S3 operations in error message', async () => {
+      mockGeneratePresignedReportDownloadLink.mockRejectedValue(
+        new Error('S3 operation failed')
+      )
+
+      try {
+        await getReportDownloadLink(2023, 'test-bucket')
+      } catch (error) {
+        expect(error.message).toContain('download link')
       }
     })
   })

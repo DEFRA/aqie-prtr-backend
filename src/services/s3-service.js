@@ -4,7 +4,9 @@ import {
   S3Client,
   ListObjectsV2Command,
   GetObjectCommand,
-  HeadObjectCommand
+  HeadObjectCommand,
+  CopyObjectCommand,
+  DeleteObjectCommand
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { config } from '#src/config.js'
@@ -95,23 +97,67 @@ export const findKeyByMetadataFilename = async (bucketName, year) => {
 
 /**
  * Generates a presigned download link for a report for a specific year.
+ * Flow:
+ * 1. First search for the file using standard filename format: reports/uk_prtr_dataset_${year}.xml
+ * 2. If not found, search using metadata filename
+ * 3. Once found, rename the S3 key to standard format for future use
+ * 4. Generate and return the presigned download link
+ * 
  * @param {string} bucketName - The name of the S3 bucket
- * @param {string} fileKey - The key of the file in the S3 bucket
  * @param {number} year - The year of the report to download
  * @returns {Promise<string>} - A presigned URL for downloading the file
+ * @throws {S3BackendError} - If any step fails
  */
 export const generatePresignedReportDownloadLink = async (
   bucketName,
-  fileKey,
   year
 ) => {
   try {
+    // Step 1: Try to find file using standard filename format
+    const targetFileKey = `reports/uk_prtr_dataset_${year}.xml`
+    let actualFileKey = targetFileKey
+    let fileExists = false
+
+    try {
+      await s3Client.send(
+        new HeadObjectCommand({
+          Bucket: bucketName,
+          Key: targetFileKey
+        })
+      )
+      fileExists = true
+      logger.info(`Found file at standard location: ${targetFileKey}`)
+    } catch (headError) {
+      // File not at standard location, proceed to metadata search
+      logger.info(
+        `Standard location not found, searching by metadata for year ${year}`
+      )
+    }
+
+    // Step 2: If not found at standard location, search using metadata
+    if (!fileExists) {
+      try {
+        actualFileKey = await findKeyByMetadataFilename(bucketName, year)
+        logger.info(`Found file by metadata search: ${actualFileKey}`)
+
+        // Step 3: Rename the file to standard location for future use
+        await renameS3Object(bucketName, actualFileKey, targetFileKey)
+        actualFileKey = targetFileKey
+        logger.info(`Renamed file to standard location: ${targetFileKey}`)
+      } catch (searchError) {
+        throw new S3BackendError(
+          `Failed to locate report file for year ${year}: ${searchError.message}`,
+          { cause: searchError }
+        )
+      }
+    }
+
+    // Step 4: Generate presigned download link
     const downloadCommand = new GetObjectCommand({
       Bucket: bucketName,
-      Key: fileKey
+      Key: actualFileKey
     })
 
-    // Generate a temporary download link (expires in 150 mins)
     const presignedUrl = await getSignedUrl(s3Client, downloadCommand, {
       expiresIn: PRESIGNED_URL_EXPIRY_SECONDS
     })
@@ -119,6 +165,10 @@ export const generatePresignedReportDownloadLink = async (
     logger.info(`Successfully generated S3 download link for year ${year}.`)
     return presignedUrl
   } catch (error) {
+    // Ensure all errors are thrown as S3BackendError
+    if (error instanceof S3BackendError) {
+      throw error
+    }
     logger.error(error, 'Failed to generate S3 download link')
     throw new S3BackendError(
       `Failed to generate S3 download link: ${error.message}`,
@@ -126,3 +176,33 @@ export const generatePresignedReportDownloadLink = async (
     )
   }
 }
+
+export const renameS3Object = async (bucketName, oldKey, newKey) => {
+  try {
+    // Step 1: copy object to new key
+    await s3Client.send(
+      new CopyObjectCommand({
+        Bucket: bucketName,
+        CopySource: `${bucketName}/${oldKey}`,
+        Key: newKey,
+        MetadataDirective: "COPY" // ✅ preserves metadata
+      })
+    );
+
+    // Step 2: delete the old object
+    await s3Client.send(
+      new DeleteObjectCommand({
+        Bucket: bucketName,
+        Key: oldKey
+      })
+    );
+
+    logger.info(`Successfully renamed ${oldKey} → ${newKey}`);
+  } catch (error) {
+    logger.error(error, "Failed to rename S3 object");
+    throw new S3BackendError(
+      `Failed to rename S3 object: ${error.message}`,
+      { cause: error }
+    );
+  }
+};

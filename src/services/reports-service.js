@@ -1,7 +1,6 @@
 import exampleReports from '../data/example-reports.js'
 import {
   generatePresignedReportDownloadLink,
-  findKeyByMetadataFilename,
   S3BackendError
 } from './s3-service.js'
 import { createLogger } from '#src/common/helpers/logging/logger.js'
@@ -64,8 +63,10 @@ async function getReports(_db) {
  * Get a presigned download link for a report by year.
  *
  * Strategy:
- * 1. Search S3 metadata to find the S3 key for the year
- * 2. Generate and return a presigned download URL
+ * 1. Search S3 standard location for the file (reports/uk_prtr_dataset_${year}.xml)
+ * 2. If not found, search S3 metadata to find the file
+ * 3. Rename the file to standard location for future use
+ * 4. Generate and return a presigned download URL
  *
  * @param {number} year - Year of the report
  * @param {string} bucketName - S3 bucket name
@@ -74,17 +75,11 @@ async function getReports(_db) {
  */
 export async function getReportDownloadLink(year, bucketName) {
   try {
-    // Search S3 by metadata to find the S3 key
-    logger.info(
-      `[get-report-download] Searching S3 metadata for year=${year}...`
-    )
-    const s3Key = await findKeyByMetadataFilename(bucketName, year)
-    logger.info(`[get-report-download] Found S3 key in S3 for year=${year}`)
+    logger.info(`[get-report-download] Generating download link for year=${year}`)
 
-    // Generate presigned URL
+    // Generate presigned URL (handles search and rename internally)
     const presignedUrl = await generatePresignedReportDownloadLink(
       bucketName,
-      s3Key,
       year
     )
 
