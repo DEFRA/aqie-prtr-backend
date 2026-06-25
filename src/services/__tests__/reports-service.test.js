@@ -135,14 +135,11 @@ describe('getReports', () => {
 })
 
 describe('getReportDownloadLink', () => {
-  let mockDb
   let mockPresignedUrl
 
   beforeEach(() => {
     vi.clearAllMocks()
     mockPresignedUrl = 'https://s3.example.com/presigned-url'
-
-    mockDb = {}
 
     mockGeneratePresignedReportDownloadLink.mockResolvedValue(mockPresignedUrl)
   })
