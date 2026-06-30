@@ -24,16 +24,17 @@
 
 import { createHash } from 'node:crypto'
 /**
- * Mint  Deterministic internal facilityId from facilityCode.
- * facilitily code is stable this will give a determisnistic UUID with a SHA-256 code truncated to 32 chars in every env
+ * Mint  Deterministic internal facilityId from facilityId.
+ * facilitily Id is stable this will give a determisnistic UUID with a SHA-256 code truncated to 32 chars in every env
  * on every re-run
  */
-function determisnisticFacilityId(facilityCode) {
-  if (!facilityCode) {
-    throw new Error('deterministicFacilityId: facilityCode is required')
+function deterministicFacilityId(facilityId) {
+  if (facilityId === null || facilityId === undefined || facilityId === '') {
+    throw new Error('deterministicFacilityId: facilityId is required')
   }
-  return `f-${createHash('sha256').update(facilityCode).digest('hex').slice(0, 32)}`
+  return `f-${createHash('sha256').update(String(facilityId)).digest('hex').slice(0, 32)}`
 }
+
 import {
   readAllValidatedRows,
   streamValidatedTsv,
@@ -326,11 +327,19 @@ export async function run() {
   // --- Step 3: postcode map ---
   await loadPostcodeMap()
 
-  // --- Step 4: read facility.tsv, dedupe by facility_code, keep latest year.
-  // facility.tsv is the primary source (has all operational data — address, geo).
-  // CODE is the shared identity between facility.tsv and facility_record.tsv;
-  // facility_id spaces are DIFFERENT and not interchangeable.
-  const latestPerCode = new Map()
+  // --- Step 4: read facility.tsv, group by facility_id
+  //Per Ricardo's 2026-06-22 clarification: facility_id is the stable
+  // identity of a physical facility; facility_code (national_id) can change
+  // when regulators rename (DECC → BEIS → DESNZ, EA → NRW transfers).
+  //
+  // So one physical facility = one facility_id = ONE facility doc.
+  // The latest year's code becomes the doc's `facilityCode` (current name);
+  // all other codes ever seen for that facility_id become
+  // `historicalNationalIds[]`. See DATA_QUALITY_NOTES.md and
+  // SCHEMA_REVIEW_2026_06_08.md §3c for the architect decision context.
+  //
+  // Structure: Map<facility_id, { latestRow, allCodes: Set, latestYear }>
+  const groupByFacilityId = new Map()
   let rowsRead = 0
   for await (const row of streamValidatedTsv(
     tsvPath('facility.tsv'),
@@ -339,40 +348,87 @@ export async function run() {
   )) {
     rowsRead++
     const code = row.facility_code
-    if (!code) continue
+    const facId = toInt(row.facility_id)
+    if (!code || facId === null) continue
     const year = toInt(row.year) ?? 0
-    const existing = latestPerCode.get(code)
-    if (!existing || year >= (existing.__year ?? 0)) {
-      row.__year = year
-      latestPerCode.set(code, row)
+    row.__year = year
+
+    let group = groupByFacilityId.get(facId)
+    if (!group) {
+      group = { latestRow: row, allCodes: new Set(), latestYear: year }
+      groupByFacilityId.set(facId, group)
+    } else if (year >= group.latestYear) {
+      group.latestRow = row
+      group.latestYear = year
+    }
+    group.allCodes.add(code)
+  }
+
+  // Quick lookup: which facility_id does each known code belong to?
+  const codeToFacilityId = new Map()
+  for (const [facId, group] of groupByFacilityId) {
+    for (const code of group.allCodes) {
+      codeToFacilityId.set(code, facId)
     }
   }
+
   log.info(
-    { rowsRead, uniqueFacilities: latestPerCode.size },
-    'facility.tsv deduplicated to latest-year-per-facility'
+    { rowsRead, uniqueFacilities: groupByFacilityId.size },
+    'facility.tsv grouped by facility_id (stable identity, per Ricardo 2026-06-22)'
   )
 
-  // Augment with facility_record.tsv codes that aren't in facility.tsv.
-  // ~400 such codes exist (facility_record covers some additional NI entries).
-  // These get a minimal facility doc with no geo/address (only facility_record
-  // operational metadata).
-  let missingFromFacilityTsv = 0
-  const codeAlreadyQuarantined = new Set()
+  // Step 4b: For codes in facility_record.tsv but not yet in any group, try to
+  // resolve via the old_facility_id bridge (which references facility.tsv's
+  // facility_id 99.8% of the time per audit). If resolved, add the code to the
+  // parent's group as a historical name. If not, it's a TRUE ORPHAN — quarantine.
+  const codeFirstRecordRow = new Map() // code → first-seen facility_record row
+  const oldFidsByCode = new Map() // code → Set<old_facility_id values across all years>
   for await (const row of streamValidatedTsv(
     tsvPath('facility_record.tsv'),
     COLS.FACILITY_RECORD,
     q.facilityRecord
   )) {
     const code = row.code
-    if (!code || latestPerCode.has(code)) continue
+    if (!code) continue
+    if (!codeFirstRecordRow.has(code)) codeFirstRecordRow.set(code, row)
+    const oldFid = toInt(row.old_facility_id)
+    if (oldFid !== null && oldFid !== 0) {
+      if (!oldFidsByCode.has(code)) oldFidsByCode.set(code, new Set())
+      oldFidsByCode.get(code).add(oldFid)
+    }
+  }
+
+  let chainResolved = 0
+  let trueOrphans = 0
+  const codeAlreadyQuarantined = new Set()
+  for (const [code, row] of codeFirstRecordRow) {
+    if (codeToFacilityId.has(code)) continue // already in a group
+
+    let resolvedFacId = null
+    const candidates = oldFidsByCode.get(code) ?? new Set()
+    for (const oldFid of candidates) {
+      if (groupByFacilityId.has(oldFid)) {
+        resolvedFacId = oldFid
+        break
+      }
+    }
+
+    if (resolvedFacId !== null) {
+      // RENAMED facility — add this code to the parent's historical-codes set
+      groupByFacilityId.get(resolvedFacId).allCodes.add(code)
+      codeToFacilityId.set(code, resolvedFacId)
+      chainResolved++
+      continue
+    }
+
+    // True orphan — quarantine
     if (codeAlreadyQuarantined.has(code)) continue
     codeAlreadyQuarantined.add(code)
-    missingFromFacilityTsv++
-
+    trueOrphans++
     await q.facilityRecord.add({
       row,
       reason:
-        'facility_code present in facility_record.tsv but missing from facility.tsv — no metadata available to build a complete facility doc; skipped per loader policy',
+        'facility_code in facility_record.tsv has no corresponding facility.tsv entry (neither directly nor via old_facility_id chain) — true orphan, no metadata available',
       ricardoRowId: toInt(row.id) ?? row.__lineNumber,
       facilityCode: code,
       reportingYear: toInt(row.year)
@@ -380,17 +436,30 @@ export async function run() {
   }
   log.info(
     {
-      missingFromFacilityTsv,
-      totalFacilities: latestPerCode.size
+      chainResolved,
+      trueOrphans,
+      totalFacilities: groupByFacilityId.size
     },
-    'facility_record codes missing from facility.tsv quarantined (not augmented)'
+    'facility_record codes resolved into existing groups via old_facility_id (or quarantined as true orphans)'
   )
 
-
   // --- Step 5: build and upsert docs ---
+  // One doc per group (= one doc per physical facility = one doc per facility_id).
+  // The latest year's row becomes the canonical metadata; all other codes the
+  // facility has been known by become historicalNationalIds[].
   let backfilled = 0
   let validGeo = 0
-  for (const row of latestPerCode.values()) {
+  for (const [groupFacId, group] of groupByFacilityId) {
+    const row = group.latestRow
+    // Pre-compute the historical-codes array (everything except the current
+    // code from this row). Visible to the upsert below via closure.
+    const historicalNationalIds = [...group.allCodes].filter(
+      (c) => c !== row.facility_code
+    )
+    row.__groupFacilityId = groupFacId
+    row.__historicalNationalIds = historicalNationalIds
+    // Fall through to the original per-row build logic below; nothing else
+    // changes inside this loop.
     const facilityCode = row.facility_code
     const ricardoFacilityId = toInt(row.facility_id)
 
@@ -450,15 +519,21 @@ export async function run() {
       Math.abs(lat) <= 90
     if (hasValidGeo) validGeo++
 
-    // Separate fields that should ONLY be set on first insert (UUID, createdAt)
-    // from fields that should be refreshed on every run.
+    // Separate fields that should ONLY be set on first insert from those
+    // refreshed on every run. internalFacilityId is DETERMINISTIC via
+    // SHA-256 of the stable facility_id — survives rename events
+    // (DECC → BEIS → DESNZ, EA → NRW).
     const setOnInsertDoc = {
-      internalFacilityId: determisnisticFacilityId(facilityCode),
+      internalFacilityId: deterministicFacilityId(row.__groupFacilityId),
       facilityCode,
       createdAt: new Date()
     }
     const setDoc = {
       ricardoFacilityId,
+      // All historical national IDs this facility has been known by
+      // (excluding the current facilityCode). Populated when a facility has
+      // been renamed across years
+      historicalNationalIds: row.__historicalNationalIds,
       facilityName: row.facility_name,
       parentCompany: parentCompany ?? {
         name: row.parent_organisation ?? null,
@@ -518,6 +593,7 @@ export async function run() {
             etsIdentifier: ets?.etsIdentifier ?? null
           }
           : null,
+      // dataSource — provenance per CLAUDE_CODE_GUIDANCE.md
       dataSource: 'ricardo-tsv',
       updatedAt: new Date()
     }

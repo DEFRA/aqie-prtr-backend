@@ -132,19 +132,36 @@ export async function run() {
   // --- Step 1: lookups from MongoDB ---
   // facilities are keyed by facilityCode (stable across years). But facility.tsv
   // has DIFFERENT facility_id per year for the same facility_code. So we build:
-  //   facility_id (Ricardo, per-year) → facility_code (cross-year stable, from facility.tsv below)
-  //   facility_code → internalFacilityId (from facilities collection)
+  // facility_id (Ricardo, per-year) → facility_code (cross-year stable, from facility.tsv below)
+  // facility_code → internalFacilityId (from facilities collection)
   // Then chain them to resolve facility_record.facility_id → internalFacilityId.
+  // Resolve facility_code → internalFacilityId via BOTH the current code
+  // and any historical codes (where the facility has been renamed across
+  // years). After the rename-merge change in facilities.js (2026-06-25),
+  // every historical code points at the same canonical facility doc.
   const internalFacilityIdByCode = new Map()
   for (const doc of await db()
     .collection('facilities')
-    .find({}, { projection: { facilityCode: 1, internalFacilityId: 1 } })
+    .find(
+      {},
+      {
+        projection: {
+          facilityCode: 1,
+          internalFacilityId: 1,
+          historicalNationalIds: 1
+        }
+      }
+    )
     .toArray()) {
     internalFacilityIdByCode.set(doc.facilityCode, doc.internalFacilityId)
+    for (const histCode of doc.historicalNationalIds ?? []) {
+      internalFacilityIdByCode.set(histCode, doc.internalFacilityId)
+    }
   }
 
   // pollutants are keyed by Ricardo source pollutant_id (doc._id, int) so
   // joins from release_transfer.tsv resolve via the source PK. Code may be
+  // NULL for ~16 stub pollutants.
   const pollutantById = new Map()
   for (const doc of await db().collection('pollutants').find().toArray()) {
     pollutantById.set(doc._id, {
@@ -345,13 +362,19 @@ export async function run() {
   // not "latest only on facilities" which would lose historical addresses).
   //
   // Build:
-  //   facilityCodeByFacilityId — facility_id (per-year) → facility_code (cross-year)
-  //   facilityIdByCode         — latest-year code → facility_id (for release_transfer bucket lookup)
-  //   facilityRowByCodeYear    — (code, year) → row (for per-year address/location enrichment)
-  const facilityCodeByFacilityId = new Map()
-  const facilityIdByCode = new Map()
+  // facilityCodeByFacilityId — facility_id (per-year) → facility_code (cross-year)
+  // facilityIdByCode — latest-year code → facility_id (for release_transfer bucket lookup)
+  // facilityRowByCodeYear — (code, year) → row (for per-year address/location enrichment)
+  // facility.tsv has multiple rows per (facility_id, year). We build several
+  // year-aware lookups so previousNationalId can be the CORRECT year's code
+  // (not just the latest — that bug returned, e.g., "DESNZOffsh-Stella" as the
+  // previousNationalId for a 2017 record when the right answer is "BEISOffsh-Stella").
+  const facilityIdByCode = new Map() // latest-year facility_id per code
   const latestYearByCode = new Map()
   const facilityRowByCodeYear = new Map()
+  // NEW: per-year code lookup so previousNationalId works correctly for renames
+  const codeByFidAndYear = new Map() // "facilityId|year" → facilityCode
+  const yearsByFacilityId = new Map() // facilityId → sorted desc list of years seen
   for await (const row of streamValidatedTsv(
     tsvPath('facility.tsv'),
     COLS.FACILITY,
@@ -361,8 +384,10 @@ export async function run() {
     const code = row.facility_code
     const year = toInt(row.year) ?? 0
     if (fid !== null && code) {
-      facilityCodeByFacilityId.set(fid, code)
       facilityRowByCodeYear.set(`${code}|${year}`, row)
+      codeByFidAndYear.set(`${fid}|${year}`, code)
+      if (!yearsByFacilityId.has(fid)) yearsByFacilityId.set(fid, [])
+      yearsByFacilityId.get(fid).push(year)
       const prevYear = latestYearByCode.get(code) ?? -1
       if (year >= prevYear) {
         latestYearByCode.set(code, year)
@@ -370,6 +395,9 @@ export async function run() {
       }
     }
   }
+  // Sort each facility_id's year list descending so we can pick "most recent
+  // year strictly before the current report's year" in O(years-for-this-fid).
+  for (const years of yearsByFacilityId.values()) years.sort((a, b) => b - a)
 
   // For previousReportingYear — build facility_id → max-reported-year from
   // facility_record.tsv. Used to resolve old_facility_id → the prior facility's
@@ -434,7 +462,7 @@ export async function run() {
       methodTypeCode: method?.methodTypeCode ?? null,
       methodTypeName: method?.methodTypeName ?? null,
       methodBasisCode: method?.methodBasisCode ?? null,
-      methodDesignation: null, // XML-only, null for TSV
+      methodDesignation: null, // XML-only, null for TSV per CLAUDE_CODE_GUIDANCE.md
       confidentialIndicator: confidential != null,
       confidentialityReasonCode: confidential?.code ?? null,
       ricardoReleaseTransferId: toInt(row.release_transfer_id),
@@ -466,13 +494,13 @@ export async function run() {
         wasteHandlerParty:
           company || site
             ? {
-                name: company?.name ?? site?.name ?? null,
-                address: company?.address ?? null,
-                siteAddress: site?.address ?? null,
-                matchCode: company?.matchCode ?? site?.matchCode ?? null,
-                ricardoCompanyId: comId,
-                ricardoSiteId: siteId
-              }
+              name: company?.name ?? site?.name ?? null,
+              address: company?.address ?? null,
+              siteAddress: site?.address ?? null,
+              matchCode: company?.matchCode ?? site?.matchCode ?? null,
+              ricardoCompanyId: comId,
+              ricardoSiteId: siteId
+            }
             : null
       })
     } else {
@@ -492,7 +520,7 @@ export async function run() {
   // The validated helper sends rows whose column count != header width to
   // q.facilityRecord automatically (almost always caused by an embedded `\n`
   // in a text field). We never reconstruct
-  // split rows with heuristics; that's a Ricardo-side fix.
+  // split rows with heuristics.
   let recordsRead = 0
   let missingFacility = 0
   let skippedNoIdOrYear = 0
@@ -594,17 +622,35 @@ export async function run() {
         : null
 
     // previousNationalId / previousReportingYear from old_facility_id.
-    // old_facility_id points at the prior facility's Ricardo facility_id;
-    // resolve to its facility_code (nationalId) and its latest reporting year.
+    //
+    // old_facility_id points at facility.tsv.facility_id (Ricardo's metadata
+    // table — verified 2026-06-22: 99.8% of old_facility_id values match
+    // facility.tsv.facility_id). We need the code AT the year RIGHT BEFORE
+    // this report's year — not the latest year, which would return the
+    // facility's CURRENT name even when it was already current at the time of
+    // this report (the original bug).
+    //
+    // Algorithm: look up the most recent year strictly before `year` for the
+    // referenced facility_id; that year's code is the previousNationalId.
+    // Only set the field if the resolved code DIFFERS from the current row's
+    // code (matches XML <PreviousNationalID> semantics, which appears only
+    // when the national ID actually changed).
     const oldFid = toInt(row.old_facility_id)
-    const previousNationalId =
-      oldFid !== null && oldFid !== 0
-        ? (facilityCodeByFacilityId.get(oldFid) ?? null)
-        : null
-    const previousReportingYear =
-      oldFid !== null && oldFid !== 0
-        ? (maxReportingYearByFacilityId.get(oldFid) ?? null)
-        : null
+    let previousNationalId = null
+    let previousReportingYear = null
+    if (oldFid !== null && oldFid !== 0) {
+      const candidates = yearsByFacilityId.get(oldFid) ?? []
+      for (const y of candidates) {
+        if (y < year) {
+          const codeAtY = codeByFidAndYear.get(`${oldFid}|${y}`)
+          if (codeAtY && codeAtY !== row.code) {
+            previousNationalId = codeAtY
+            previousReportingYear = y
+          }
+          break
+        }
+      }
+    }
 
     // Year-specific address + location from facility.tsv (NOT facility_record).
     // facility.tsv has one row per (code, year); pick this specific year's row.
@@ -640,10 +686,10 @@ export async function run() {
     const bucket =
       facilityTsvFid !== undefined
         ? (buckets.get(`${facilityTsvFid}|${year}`) ?? {
-            releases: [],
-            transfers: [],
-            waste: []
-          })
+          releases: [],
+          transfers: [],
+          waste: []
+        })
         : { releases: [], transfers: [], waste: [] }
 
     const doc = {
@@ -667,12 +713,12 @@ export async function run() {
           : { acronym: null, name: null },
         contact: capContact
           ? {
-              address: capContact.address,
-              telephone: capContact.telephone,
-              fax: capContact.fax,
-              email: capContact.email,
-              contactPersonName: capContact.contactPersonName
-            }
+            address: capContact.address,
+            telephone: capContact.telephone,
+            fax: capContact.fax,
+            email: capContact.email,
+            contactPersonName: capContact.contactPersonName
+          }
           : null
       },
       address: yearSpecificAddress,
