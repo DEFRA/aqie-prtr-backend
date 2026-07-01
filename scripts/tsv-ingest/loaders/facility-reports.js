@@ -430,6 +430,7 @@ export async function run() {
   // --- Step 3: bucket release_transfer.tsv by (facility_id, year) ---
   // Each bucket has releases[], transfers[], waste[]
   const buckets = new Map()
+  const consumedBucketKeys = new Set()
   let releaseTransferRows = 0
   let unknownTypes = 0
   for await (const row of streamValidatedTsv(
@@ -683,14 +684,21 @@ export async function run() {
     // release_transfer.tsv uses facility.tsv's facility_id space, NOT
     // facility_record's. Translate via facilityIdByCode.
     const facilityTsvFid = facilityIdByCode.get(row.code)
+    const bucketKey = facilityTsvFid!== undefined ? `${facilityTsvFid}|${year}` : null
     const bucket =
-      facilityTsvFid !== undefined
-        ? (buckets.get(`${facilityTsvFid}|${year}`) ?? {
+      bucketKey !== null
+        ? (buckets.get(bucketKey) ?? {
           releases: [],
           transfers: [],
           waste: []
         })
         : { releases: [], transfers: [], waste: [] }
+    //Mark consumed regardless of whether the bucket existed - any subsequent
+    //duplicate facility_record row for the same (facility, year) is detected
+    //and quarantined below, so the bucket's data is already represented here.
+
+    if(bucketKey !==null)
+    consumedBucketKeys.add(bucketKey)
 
     const doc = {
       internalFacilityId: facility.internalFacilityId,
@@ -773,6 +781,208 @@ export async function run() {
   }
   await flush()
 
+  // --- Step 5: leftover-bucket sweep ---
+//
+// Some (facility.tsv-fid, year) buckets have release_transfer / waste data
+// but no corresponding facility_record.tsv row to attach them to. Without
+// this sweep they are silently dropped — verified production gap, e.g.
+// London Two (facility_id=1060320, year=2024, 2.04t waste, treatment=Recovery).
+//
+// Strategy: for each unconsumed bucket, build a synthetic facility_reports
+// doc from facility.tsv metadata (year-specific) + the bucket. Tag with
+// dataSource='synthesised-from-emissions' so consumers can distinguish
+// these from formal Ricardo facility_record-backed reports.
+//
+// Identity resolution: bucket key is (tsv_fid, year). Get the per-year
+// code from facility.tsv via codeByFidAndYear; fall back to the latest
+// year ≤ this year for that fid. Then code → internalFacilityId via the
+// facilities collection (covers historical/rename codes too).
+let leftoverWritten = 0
+let leftoverSkippedNoFacility = 0
+let leftoverSkippedAlreadyWritten = 0
+for (const [bucketKey, bucket] of buckets) {
+if (consumedBucketKeys.has(bucketKey)) continue
+const sepIdx = bucketKey.indexOf('|')
+const tsvFid = Number(bucketKey.slice(0, sepIdx))
+const year = Number(bucketKey.slice(sepIdx + 1))
+
+let code = codeByFidAndYear.get(`${tsvFid}|${year}`)
+if (!code) {
+const candidates = yearsByFacilityId.get(tsvFid) ?? []
+for (const y of candidates) {
+if (y <= year) {
+code = codeByFidAndYear.get(`${tsvFid}|${y}`)
+if (code) break
+}
+}
+}
+const internalFacilityId = code
+? internalFacilityIdByCode.get(code)
+: null
+if (!internalFacilityId) {
+leftoverSkippedNoFacility++
+await quarantine.add({
+row: { facility_id: tsvFid, year, resolvedCode: code ?? null },
+reason:
+'leftover-sweep: release_transfer bucket has no facility_record row AND no facility.tsv entry resolves to a facility doc',
+facilityCode: code ?? null,
+reportingYear: year
+})
+continue
+}
+
+// Year-specific row from facility.tsv (may be undefined if the bucket's
+// year is outside facility.tsv's coverage; then we fall back to nulls).
+const facilityTsvRow = code
+? facilityRowByCodeYear.get(`${code}|${year}`)
+: null
+
+let yearSpecificAddress = null
+let yearSpecificLocation = null
+if (facilityTsvRow) {
+yearSpecificAddress = {
+streetName: facilityTsvRow.street,
+cityName: facilityTsvRow.town,
+postcode: facilityTsvRow.postcode,
+countyName:
+countyById.get(toInt(facilityTsvRow.county_id)) ??
+facilityTsvRow.county ??
+null,
+countryName: facilityTsvRow.country || null
+}
+const lng = toFloat(facilityTsvRow.longitude)
+const lat = toFloat(facilityTsvRow.latitude)
+if (
+lng !== null &&
+lat !== null &&
+Math.abs(lng) <= 180 &&
+Math.abs(lat) <= 90
+) {
+yearSpecificLocation = { type: 'Point', coordinates: [lng, lat] }
+}
+}
+
+const rawActivities = activitiesByFacilityYear.get(`${tsvFid}|${year}`) ?? []
+const activities = []
+let ranking = 1
+for (const a of rawActivities) {
+if (a.ippcId !== null) {
+const def = ippcById.get(a.ippcId)
+if (def) {
+activities.push({
+activityCode: def.matchCode,
+name: def.name,
+description: def.description,
+categoryName: def.categoryName,
+taxonomy: 'ippc',
+isMainActivity: a.isMain,
+ranking: ranking++
+})
+}
+}
+if (a.prtrId !== null) {
+const def = prtrById.get(a.prtrId)
+if (def) {
+activities.push({
+activityCode: def.matchCode,
+name: def.name,
+description: def.description,
+categoryName: def.categoryName,
+taxonomy: 'prtr',
+isMainActivity: a.isMain,
+ranking: ranking++
+})
+}
+}
+}
+
+const regAuth = facilityTsvRow
+? regAuthById.get(toInt(facilityTsvRow.authority_id))
+: null
+const capContact = regAuth
+? capPartyByYearCode.get(`${year}|${regAuth.code}`)
+: null
+const agency =
+capContact?.agencyId !== undefined
+? agencyByRicardoId.get(capContact.agencyId)
+: null
+const nace = facilityTsvRow
+? naceById.get(toInt(facilityTsvRow.nace_id))
+: null
+
+// Collision check: a leftover bucket can resolve to an internalFacilityId
+// that the main pass already wrote a doc for (rare — happens when a
+// facility_record row's code-bridge resolves to a different facility.tsv
+// fid than the bucket's). Skip rather than overwrite.
+const facYearKey = `${internalFacilityId}|${year}`
+if (seenFacilityYear.has(facYearKey)) {
+leftoverSkippedAlreadyWritten++
+continue
+}
+seenFacilityYear.add(facYearKey)
+
+const doc = {
+internalFacilityId,
+reportingYear: year,
+nationalId: code,
+ricardoFacilityRecordId: null,
+isPartialRicardo: true,
+previousNationalId: null,
+previousReportingYear: null,
+facilityName: facilityTsvRow?.facility_name ?? null,
+parentCompanyName: facilityTsvRow?.parent_organisation ?? null,
+naceCode: nace?.code ?? null,
+mainEconomicActivityName: nace?.name ?? null,
+competentAuthority: {
+regulatoryAuthority: regAuth
+? { code: regAuth.code, name: regAuth.name }
+: { code: null, name: null },
+agency: agency
+? { acronym: agency.acronym, name: agency.name }
+: { acronym: null, name: null },
+contact: capContact
+? {
+address: capContact.address,
+telephone: capContact.telephone,
+fax: capContact.fax,
+email: capContact.email,
+contactPersonName: capContact.contactPersonName
+}
+: null
+},
+address: yearSpecificAddress,
+location: yearSpecificLocation,
+activities,
+pollutantReleases: bucket.releases,
+pollutantTransfers: bucket.transfers,
+wasteTransfers: bucket.waste,
+totalIppcInstallationQty: null,
+totalEmployeeQty: null,
+operationHours: null,
+websiteUrl: null,
+publicInformation: null,
+remarkText: null,
+protectVoluntaryData: null,
+confidentialIndicator: false,
+confidentialityReasonCode: null,
+contactTelephone: facilityTsvRow?.telephone ?? null,
+dataSource: 'synthesised-from-emissions',
+createdAt: new Date(),
+updatedAt: new Date()
+}
+
+buffer.push({
+replaceOne: {
+filter: { internalFacilityId, reportingYear: year },
+replacement: doc,
+upsert: true
+}
+})
+leftoverWritten++
+if (buffer.length >= FR_BATCH_SIZE) await flush()
+}
+await flush()
+
   // Flush every quarantine and collect per-file malformed counts.
   for (const inst of Object.values(q)) await inst.flush()
   const malformedByFile = Object.fromEntries(
@@ -794,7 +1004,11 @@ export async function run() {
       duplicateFacilityYear,
       malformedByFile,
       totalMalformed,
-      bucketsConsumed: buckets.size
+      bucketsConsumed: buckets.size,
+      bucketsConsumed:consumedBucketKeys.size,
+      leftoverWritten,
+      leftoverSkippedNoFacility,
+      leftoverSkippedAlreadyWritten
     },
     'facilityReports loader complete'
   )
@@ -804,6 +1018,9 @@ export async function run() {
     skippedNoIdOrYear,
     duplicateFacilityYear,
     malformedByFile,
-    totalMalformed
+    totalMalformed,
+    leftoverWritten,
+    leftoverSkippedNoFacility,
+    leftoverSkippedAlreadyWritten
   }
 }
