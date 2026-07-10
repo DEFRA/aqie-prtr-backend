@@ -402,7 +402,18 @@ export async function run() {
   // For previousReportingYear — build facility_id → max-reported-year from
   // facility_record.tsv. Used to resolve old_facility_id → the prior facility's
   // last reporting year. One-pass pre-scan.
+  //
+  // AND: while we're here, decide which facility_record row wins per
+  // (internalFacilityId, year) when there's a rename-overlap duplicate.
+  //   Prefer is_partial=0 over is_partial=1 (Ricardo's own completeness flag).
+  //   Cross-checked against Ricardo's XML for 69 pairs:
+  //     52 first-seen picks match XML  (would win via either rule)
+  //     9 first-seen picks are WRONG   (is_partial rule flips them correctly)
+  //     8 not in XML at all            (no difference)
+  //   So the is_partial=0 rule matches Ricardo's canonical XML entries.
   const maxReportingYearByFacilityId = new Map()
+  const preferredRecordIdByKey = new Map() // "internalFacilityId|year" → facility_record.id
+  const preferredRowIsPartialByKey = new Map()
   for await (const row of streamValidatedTsv(
     tsvPath('facility_record.tsv'),
     COLS.FACILITY_RECORD,
@@ -414,8 +425,29 @@ export async function run() {
       const prev = maxReportingYearByFacilityId.get(fid) ?? -1
       if (yr > prev) maxReportingYearByFacilityId.set(fid, yr)
     }
+    // Preferred-row election: track the winner per (internalFacilityId, year).
+    // Both codes for a renamed facility resolve to the same internalFacilityId
+    // (facility.tsv historicalNationalIds), so this is where we detect the overlap.
+    const code = row.code
+    const id = toInt(row.id)
+    if (!code || yr === null || id === null) continue
+    const internalFacilityId = internalFacilityIdByCode.get(code)
+    if (!internalFacilityId) continue
+    const isPartial = toBool(row.is_partial)
+    const key = `${internalFacilityId}|${yr}`
+    const currentWinner = preferredRecordIdByKey.get(key)
+    if (currentWinner === undefined) {
+      preferredRecordIdByKey.set(key, id)
+      preferredRowIsPartialByKey.set(key, isPartial)
+    } else {
+      const currentIsPartial = preferredRowIsPartialByKey.get(key)
+      // Flip to this row ONLY if current is partial and this one is not.
+      if (currentIsPartial === true && isPartial === false) {
+        preferredRecordIdByKey.set(key, id)
+        preferredRowIsPartialByKey.set(key, isPartial)
+      }
+    }
   }
-
   log.info(
     {
       capParties: capPartyByYearCode.size,
@@ -684,7 +716,7 @@ export async function run() {
     // release_transfer.tsv uses facility.tsv's facility_id space, NOT
     // facility_record's. Translate via facilityIdByCode.
     const facilityTsvFid = facilityIdByCode.get(row.code)
-    const bucketKey = facilityTsvFid!== undefined ? `${facilityTsvFid}|${year}` : null
+    const bucketKey = facilityTsvFid !== undefined ? `${facilityTsvFid}|${year}` : null
     const bucket =
       bucketKey !== null
         ? (buckets.get(bucketKey) ?? {
@@ -697,8 +729,8 @@ export async function run() {
     //duplicate facility_record row for the same (facility, year) is detected
     //and quarantined below, so the bucket's data is already represented here.
 
-    if(bucketKey !==null)
-    consumedBucketKeys.add(bucketKey)
+    if (bucketKey !== null)
+      consumedBucketKeys.add(bucketKey)
 
     const doc = {
       internalFacilityId: facility.internalFacilityId,
@@ -752,13 +784,28 @@ export async function run() {
 
     // Detect duplicate (internalFacilityId, reportingYear) within source —
     // the second-seen row would silently replace the first via upsert.
-    // Quarantine the second one for traceability.
+    // Use the pre-scan's is_partial=0 election to decide the winner rather
+    // than "first-seen". Non-winning rows are quarantined for traceability.
     const facYearKey = `${facility.internalFacilityId}|${year}`
+    const preferredId = preferredRecordIdByKey.get(facYearKey)
+    if (preferredId !== undefined && preferredId !== recordId) {
+      duplicateFacilityYear++
+      const preferredIsPartial = preferredRowIsPartialByKey.get(facYearKey)
+      await quarantine.add({
+        row,
+        reason: `duplicate (facility_code "${facilityCode}", year ${year}) — another row for the same facility (via historicalNationalIds) already elected as canonical (preferred facility_record.id=${preferredId}, is_partial=${preferredIsPartial}); this row is_partial=${toBool(row.is_partial)}`,
+        ricardoRowId: recordId,
+        facilityCode,
+        reportingYear: year
+      })
+      continue
+    }
     if (seenFacilityYear.has(facYearKey)) {
+      // Shouldn't happen if pre-scan election is correct, but guard anyway.
       duplicateFacilityYear++
       await quarantine.add({
         row,
-        reason: `duplicate (facility_code "${facilityCode}", year ${year}) — earlier row already processed; this would have replaced it`,
+        reason: `duplicate (facility_code "${facilityCode}", year ${year}) — same-code row already processed; this would have replaced it`,
         ricardoRowId: recordId,
         facilityCode,
         reportingYear: year
@@ -766,6 +813,7 @@ export async function run() {
       continue
     }
     seenFacilityYear.add(facYearKey)
+
 
     buffer.push({
       replaceOne: {
@@ -782,206 +830,258 @@ export async function run() {
   await flush()
 
   // --- Step 5: leftover-bucket sweep ---
-//
-// Some (facility.tsv-fid, year) buckets have release_transfer / waste data
-// but no corresponding facility_record.tsv row to attach them to. Without
-// this sweep they are silently dropped — verified production gap, e.g.
-// London Two (facility_id=1060320, year=2024, 2.04t waste, treatment=Recovery).
-//
-// Strategy: for each unconsumed bucket, build a synthetic facility_reports
-// doc from facility.tsv metadata (year-specific) + the bucket. Tag with
-// dataSource='synthesised-from-emissions' so consumers can distinguish
-// these from formal Ricardo facility_record-backed reports.
-//
-// Identity resolution: bucket key is (tsv_fid, year). Get the per-year
-// code from facility.tsv via codeByFidAndYear; fall back to the latest
-// year ≤ this year for that fid. Then code → internalFacilityId via the
-// facilities collection (covers historical/rename codes too).
-let leftoverWritten = 0
-let leftoverSkippedNoFacility = 0
-let leftoverSkippedAlreadyWritten = 0
-for (const [bucketKey, bucket] of buckets) {
-if (consumedBucketKeys.has(bucketKey)) continue
-const sepIdx = bucketKey.indexOf('|')
-const tsvFid = Number(bucketKey.slice(0, sepIdx))
-const year = Number(bucketKey.slice(sepIdx + 1))
+  //
+  // Some (facility.tsv-fid, year) buckets have release_transfer / waste data
+  // but no corresponding facility_record.tsv row to attach them to. Without
+  // this sweep they are silently dropped — verified production gap, e.g.
+  // London Two (facility_id=1060320, year=2024, 2.04t waste, treatment=Recovery).
+  //
+  // Strategy: for each unconsumed bucket, build a synthetic facility_reports
+  // doc from facility.tsv metadata (year-specific) + the bucket. Tag with
+  // dataSource='synthesised-from-emissions' so consumers can distinguish
+  // these from formal Ricardo facility_record-backed reports.
+  //
+  // Identity resolution: bucket key is (tsv_fid, year). Get the per-year
+  // code from facility.tsv via codeByFidAndYear; fall back to the latest
+  // year ≤ this year for that fid. Then code → internalFacilityId via the
+  // facilities collection (covers historical/rename codes too).
+  let leftoverWritten = 0
+  let leftoverSkippedNoFacility = 0
+  let leftoverSkippedAlreadyWritten = 0
+  for (const [bucketKey, bucket] of buckets) {
+    if (consumedBucketKeys.has(bucketKey)) continue
+    const sepIdx = bucketKey.indexOf('|')
+    const tsvFid = Number(bucketKey.slice(0, sepIdx))
+    const year = Number(bucketKey.slice(sepIdx + 1))
 
-let code = codeByFidAndYear.get(`${tsvFid}|${year}`)
-if (!code) {
-const candidates = yearsByFacilityId.get(tsvFid) ?? []
-for (const y of candidates) {
-if (y <= year) {
-code = codeByFidAndYear.get(`${tsvFid}|${y}`)
-if (code) break
-}
-}
-}
-const internalFacilityId = code
-? internalFacilityIdByCode.get(code)
-: null
-if (!internalFacilityId) {
-leftoverSkippedNoFacility++
-await quarantine.add({
-row: { facility_id: tsvFid, year, resolvedCode: code ?? null },
-reason:
-'leftover-sweep: release_transfer bucket has no facility_record row AND no facility.tsv entry resolves to a facility doc',
-facilityCode: code ?? null,
-reportingYear: year
-})
-continue
-}
+    let code = codeByFidAndYear.get(`${tsvFid}|${year}`)
+    if (!code) {
+      const candidates = yearsByFacilityId.get(tsvFid) ?? []
+      for (const y of candidates) {
+        if (y <= year) {
+          code = codeByFidAndYear.get(`${tsvFid}|${y}`)
+          if (code) break
+        }
+      }
+    }
+    const internalFacilityId = code
+      ? internalFacilityIdByCode.get(code)
+      : null
+    if (!internalFacilityId) {
+      // Per-row quarantine: iterate every release/transfer/waste entry in the
+      // orphan bucket and log each as its own record under release_transfer.tsv.
+      // This preserves pollutant/quantity/method detail so Ricardo can act on
+      // each specific emission (bucket-level records lost that granularity).
+      const orphanEntries = [
+        ...bucket.releases.map((e) => ({
+          ...e,
+          kind: 'release',
+          mediumCode: e.mediumCode ?? null,
+          quantity: e.totalQuantity ?? null,
+          accidentalQuantity: e.accidentalQuantity ?? null,
+          wasteTypeCode: null,
+          wasteTreatmentCode: null
+        })),
+        ...bucket.transfers.map((e) => ({
+          ...e,
+          kind: 'transfer',
+          mediumCode: null,
+          quantity: e.totalQuantity ?? null,
+          accidentalQuantity: null,
+          wasteTypeCode: null,
+          wasteTreatmentCode: null
+        })),
+        ...bucket.waste.map((e) => ({
+          ...e,
+          kind: 'waste',
+          mediumCode: null,
+          quantity: e.quantity ?? null,
+          accidentalQuantity: null,
+          wasteTypeCode: e.wasteTypeCode ?? null,
+          wasteTreatmentCode: e.wasteTreatmentCode ?? null
+        }))
+      ]
+      leftoverSkippedNoFacility += orphanEntries.length
+      for (const entry of orphanEntries) {
+        await q.releaseTransfer.add({
+          row: {
+            facility_id: tsvFid,
+            year,
+            resolvedCode: code ?? null,
+            kind: entry.kind,
+            pollutantId: entry.pollutantId,
+            pollutantCode: entry.pollutantCode,
+            pollutantName: entry.pollutantName,
+            mediumCode: entry.mediumCode,
+            wasteTypeCode: entry.wasteTypeCode,
+            wasteTreatmentCode: entry.wasteTreatmentCode,
+            quantity: entry.quantity,
+            accidentalQuantity: entry.accidentalQuantity,
+            methodTypeCode: entry.methodTypeCode ?? null,
+            confidentialityReasonCode: entry.confidentialityReasonCode ?? null,
+            ricardoCreatedAt: entry.sourceCreatedAt ?? null
+          },
+          reason:
+            'leftover-sweep: release_transfer row belongs to a (facility_id, year) that has no facility_record row AND no facility.tsv entry resolves to a facility doc',
+          ricardoRowId: entry.ricardoReleaseTransferId ?? null,
+          facilityCode: code ?? null,
+          reportingYear: year
+        })
+      }
+      continue
+    }
 
-// Year-specific row from facility.tsv (may be undefined if the bucket's
-// year is outside facility.tsv's coverage; then we fall back to nulls).
-const facilityTsvRow = code
-? facilityRowByCodeYear.get(`${code}|${year}`)
-: null
+    // Year-specific row from facility.tsv (may be undefined if the bucket's
+    // year is outside facility.tsv's coverage; then we fall back to nulls).
+    const facilityTsvRow = code
+      ? facilityRowByCodeYear.get(`${code}|${year}`)
+      : null
 
-let yearSpecificAddress = null
-let yearSpecificLocation = null
-if (facilityTsvRow) {
-yearSpecificAddress = {
-streetName: facilityTsvRow.street,
-cityName: facilityTsvRow.town,
-postcode: facilityTsvRow.postcode,
-countyName:
-countyById.get(toInt(facilityTsvRow.county_id)) ??
-facilityTsvRow.county ??
-null,
-countryName: facilityTsvRow.country || null
-}
-const lng = toFloat(facilityTsvRow.longitude)
-const lat = toFloat(facilityTsvRow.latitude)
-if (
-lng !== null &&
-lat !== null &&
-Math.abs(lng) <= 180 &&
-Math.abs(lat) <= 90
-) {
-yearSpecificLocation = { type: 'Point', coordinates: [lng, lat] }
-}
-}
+    let yearSpecificAddress = null
+    let yearSpecificLocation = null
+    if (facilityTsvRow) {
+      yearSpecificAddress = {
+        streetName: facilityTsvRow.street,
+        cityName: facilityTsvRow.town,
+        postcode: facilityTsvRow.postcode,
+        countyName:
+          countyById.get(toInt(facilityTsvRow.county_id)) ??
+          facilityTsvRow.county ??
+          null,
+        countryName: facilityTsvRow.country || null
+      }
+      const lng = toFloat(facilityTsvRow.longitude)
+      const lat = toFloat(facilityTsvRow.latitude)
+      if (
+        lng !== null &&
+        lat !== null &&
+        Math.abs(lng) <= 180 &&
+        Math.abs(lat) <= 90
+      ) {
+        yearSpecificLocation = { type: 'Point', coordinates: [lng, lat] }
+      }
+    }
 
-const rawActivities = activitiesByFacilityYear.get(`${tsvFid}|${year}`) ?? []
-const activities = []
-let ranking = 1
-for (const a of rawActivities) {
-if (a.ippcId !== null) {
-const def = ippcById.get(a.ippcId)
-if (def) {
-activities.push({
-activityCode: def.matchCode,
-name: def.name,
-description: def.description,
-categoryName: def.categoryName,
-taxonomy: 'ippc',
-isMainActivity: a.isMain,
-ranking: ranking++
-})
-}
-}
-if (a.prtrId !== null) {
-const def = prtrById.get(a.prtrId)
-if (def) {
-activities.push({
-activityCode: def.matchCode,
-name: def.name,
-description: def.description,
-categoryName: def.categoryName,
-taxonomy: 'prtr',
-isMainActivity: a.isMain,
-ranking: ranking++
-})
-}
-}
-}
+    const rawActivities = activitiesByFacilityYear.get(`${tsvFid}|${year}`) ?? []
+    const activities = []
+    let ranking = 1
+    for (const a of rawActivities) {
+      if (a.ippcId !== null) {
+        const def = ippcById.get(a.ippcId)
+        if (def) {
+          activities.push({
+            activityCode: def.matchCode,
+            name: def.name,
+            description: def.description,
+            categoryName: def.categoryName,
+            taxonomy: 'ippc',
+            isMainActivity: a.isMain,
+            ranking: ranking++
+          })
+        }
+      }
+      if (a.prtrId !== null) {
+        const def = prtrById.get(a.prtrId)
+        if (def) {
+          activities.push({
+            activityCode: def.matchCode,
+            name: def.name,
+            description: def.description,
+            categoryName: def.categoryName,
+            taxonomy: 'prtr',
+            isMainActivity: a.isMain,
+            ranking: ranking++
+          })
+        }
+      }
+    }
 
-const regAuth = facilityTsvRow
-? regAuthById.get(toInt(facilityTsvRow.authority_id))
-: null
-const capContact = regAuth
-? capPartyByYearCode.get(`${year}|${regAuth.code}`)
-: null
-const agency =
-capContact?.agencyId !== undefined
-? agencyByRicardoId.get(capContact.agencyId)
-: null
-const nace = facilityTsvRow
-? naceById.get(toInt(facilityTsvRow.nace_id))
-: null
+    const regAuth = facilityTsvRow
+      ? regAuthById.get(toInt(facilityTsvRow.authority_id))
+      : null
+    const capContact = regAuth
+      ? capPartyByYearCode.get(`${year}|${regAuth.code}`)
+      : null
+    const agency =
+      capContact?.agencyId !== undefined
+        ? agencyByRicardoId.get(capContact.agencyId)
+        : null
+    const nace = facilityTsvRow
+      ? naceById.get(toInt(facilityTsvRow.nace_id))
+      : null
 
-// Collision check: a leftover bucket can resolve to an internalFacilityId
-// that the main pass already wrote a doc for (rare — happens when a
-// facility_record row's code-bridge resolves to a different facility.tsv
-// fid than the bucket's). Skip rather than overwrite.
-const facYearKey = `${internalFacilityId}|${year}`
-if (seenFacilityYear.has(facYearKey)) {
-leftoverSkippedAlreadyWritten++
-continue
-}
-seenFacilityYear.add(facYearKey)
+    // Collision check: a leftover bucket can resolve to an internalFacilityId
+    // that the main pass already wrote a doc for (rare — happens when a
+    // facility_record row's code-bridge resolves to a different facility.tsv
+    // fid than the bucket's). Skip rather than overwrite.
+    const facYearKey = `${internalFacilityId}|${year}`
+    if (seenFacilityYear.has(facYearKey)) {
+      leftoverSkippedAlreadyWritten++
+      continue
+    }
+    seenFacilityYear.add(facYearKey)
 
-const doc = {
-internalFacilityId,
-reportingYear: year,
-nationalId: code,
-ricardoFacilityRecordId: null,
-isPartialRicardo: true,
-previousNationalId: null,
-previousReportingYear: null,
-facilityName: facilityTsvRow?.facility_name ?? null,
-parentCompanyName: facilityTsvRow?.parent_organisation ?? null,
-naceCode: nace?.code ?? null,
-mainEconomicActivityName: nace?.name ?? null,
-competentAuthority: {
-regulatoryAuthority: regAuth
-? { code: regAuth.code, name: regAuth.name }
-: { code: null, name: null },
-agency: agency
-? { acronym: agency.acronym, name: agency.name }
-: { acronym: null, name: null },
-contact: capContact
-? {
-address: capContact.address,
-telephone: capContact.telephone,
-fax: capContact.fax,
-email: capContact.email,
-contactPersonName: capContact.contactPersonName
-}
-: null
-},
-address: yearSpecificAddress,
-location: yearSpecificLocation,
-activities,
-pollutantReleases: bucket.releases,
-pollutantTransfers: bucket.transfers,
-wasteTransfers: bucket.waste,
-totalIppcInstallationQty: null,
-totalEmployeeQty: null,
-operationHours: null,
-websiteUrl: null,
-publicInformation: null,
-remarkText: null,
-protectVoluntaryData: null,
-confidentialIndicator: false,
-confidentialityReasonCode: null,
-contactTelephone: facilityTsvRow?.telephone ?? null,
-dataSource: 'synthesised-from-emissions',
-createdAt: new Date(),
-updatedAt: new Date()
-}
+    const doc = {
+      internalFacilityId,
+      reportingYear: year,
+      nationalId: code,
+      ricardoFacilityRecordId: null,
+      isPartialRicardo: true,
+      previousNationalId: null,
+      previousReportingYear: null,
+      facilityName: facilityTsvRow?.facility_name ?? null,
+      parentCompanyName: facilityTsvRow?.parent_organisation ?? null,
+      naceCode: nace?.code ?? null,
+      mainEconomicActivityName: nace?.name ?? null,
+      competentAuthority: {
+        regulatoryAuthority: regAuth
+          ? { code: regAuth.code, name: regAuth.name }
+          : { code: null, name: null },
+        agency: agency
+          ? { acronym: agency.acronym, name: agency.name }
+          : { acronym: null, name: null },
+        contact: capContact
+          ? {
+            address: capContact.address,
+            telephone: capContact.telephone,
+            fax: capContact.fax,
+            email: capContact.email,
+            contactPersonName: capContact.contactPersonName
+          }
+          : null
+      },
+      address: yearSpecificAddress,
+      location: yearSpecificLocation,
+      activities,
+      pollutantReleases: bucket.releases,
+      pollutantTransfers: bucket.transfers,
+      wasteTransfers: bucket.waste,
+      totalIppcInstallationQty: null,
+      totalEmployeeQty: null,
+      operationHours: null,
+      websiteUrl: null,
+      publicInformation: null,
+      remarkText: null,
+      protectVoluntaryData: null,
+      confidentialIndicator: false,
+      confidentialityReasonCode: null,
+      contactTelephone: facilityTsvRow?.telephone ?? null,
+      dataSource: 'synthesised-from-emissions',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }
 
-buffer.push({
-replaceOne: {
-filter: { internalFacilityId, reportingYear: year },
-replacement: doc,
-upsert: true
-}
-})
-leftoverWritten++
-if (buffer.length >= FR_BATCH_SIZE) await flush()
-}
-await flush()
+    buffer.push({
+      replaceOne: {
+        filter: { internalFacilityId, reportingYear: year },
+        replacement: doc,
+        upsert: true
+      }
+    })
+    leftoverWritten++
+    if (buffer.length >= FR_BATCH_SIZE) await flush()
+  }
+  await flush()
 
   // Flush every quarantine and collect per-file malformed counts.
   for (const inst of Object.values(q)) await inst.flush()
@@ -1005,7 +1105,7 @@ await flush()
       malformedByFile,
       totalMalformed,
       bucketsConsumed: buckets.size,
-      bucketsConsumed:consumedBucketKeys.size,
+      bucketsConsumed: consumedBucketKeys.size,
       leftoverWritten,
       leftoverSkippedNoFacility,
       leftoverSkippedAlreadyWritten
