@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { statusCodes } from '#src/common/constants/status-codes.js'
 
 vi.mock('#src/services/facility-record-service.js', () => ({
   getFacilityRecord: vi.fn()
@@ -68,7 +69,7 @@ describe('handleFacilityRecord', () => {
       year: 2024,
       facility: { id: VALID_ID, reportingYears: [2024, 2023] }
     })
-    expect(code).toHaveBeenCalledWith(200)
+    expect(code).toHaveBeenCalledWith(statusCodes.ok)
   })
 
   it('passes year as undefined when omitted, so the service defaults to latest', async () => {
@@ -90,7 +91,7 @@ describe('handleFacilityRecord', () => {
     )
 
     expect(result.isBoom).toBe(true)
-    expect(result.output.statusCode).toBe(404)
+    expect(result.output.statusCode).toBe(statusCodes.notFound)
     expect(response).not.toHaveBeenCalled()
   })
 
@@ -100,7 +101,7 @@ describe('handleFacilityRecord', () => {
 
     await expect(
       handleFacilityRecord({ params: { id: VALID_ID }, db: fakeDb }, h)
-    ).rejects.toMatchObject({ isBoom: true, output: { statusCode: 500 } })
+    ).rejects.toMatchObject({ isBoom: true, output: { statusCode: statusCodes.internalServerError } })
   })
 })
 

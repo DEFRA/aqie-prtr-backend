@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { statusCodes } from '#src/common/constants/status-codes.js'
 
 vi.mock('#src/services/facility-service.js', () => ({
   findFacilitiesNearby: vi.fn()
@@ -49,7 +50,7 @@ describe('handleFacilitiesNearby', () => {
       perPage: 10,
       totalPages: 66
     })
-    expect(code).toHaveBeenCalledWith(200)
+    expect(code).toHaveBeenCalledWith(statusCodes.ok)
   })
 
   it('passes db, radiusMiles and skip/limit derived from page/perPage', async () => {
