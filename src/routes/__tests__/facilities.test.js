@@ -22,8 +22,11 @@ describe('handleFacilitiesNearby', () => {
     findFacilitiesNearby.mockResolvedValue({
       results: [
         {
-          id: 'f-1', name: 'Brunswick', activity: 'Disposal',
-          distanceMiles: 0.1, latestReportingYear: 2024,
+          id: 'f-1',
+          name: 'Brunswick',
+          activity: 'Disposal',
+          distanceMiles: 0.1,
+          latestReportingYear: 2024,
           latestReportingTypes: ['wasteTransfers']
         }
       ],
@@ -32,12 +35,19 @@ describe('handleFacilitiesNearby', () => {
     const { h, response, code } = buildH()
 
     await handleFacilitiesNearby(
-      { query: { lat: 55, lng: -1.6, radius: 50, page: 1, perPage: 10 }, db: fakeDb },
+      {
+        query: { lat: 55, lng: -1.6, radius: 50, page: 1, perPage: 10 },
+        db: fakeDb
+      },
       h
     )
 
     expect(response.mock.calls[0][0]).toMatchObject({
-      count: 1, total: 657, page: 1, perPage: 10, totalPages: 66
+      count: 1,
+      total: 657,
+      page: 1,
+      perPage: 10,
+      totalPages: 66
     })
     expect(code).toHaveBeenCalledWith(200)
   })
@@ -47,12 +57,19 @@ describe('handleFacilitiesNearby', () => {
     const { h } = buildH()
 
     await handleFacilitiesNearby(
-      { query: { lat: 55, lng: -1.6, radius: 50, page: 3, perPage: 10 }, db: fakeDb },
+      {
+        query: { lat: 55, lng: -1.6, radius: 50, page: 3, perPage: 10 },
+        db: fakeDb
+      },
       h
     )
 
     expect(findFacilitiesNearby).toHaveBeenCalledWith(fakeDb, {
-      lat: 55, lng: -1.6, radiusMiles: 50, skip: 20, limit: 10
+      lat: 55,
+      lng: -1.6,
+      radiusMiles: 50,
+      skip: 20,
+      limit: 10
     })
   })
 
@@ -61,11 +78,18 @@ describe('handleFacilitiesNearby', () => {
     const { h, response } = buildH()
 
     await handleFacilitiesNearby(
-      { query: { lat: 55, lng: -1.6, radius: 50, page: 1, perPage: 10 }, db: fakeDb },
+      {
+        query: { lat: 55, lng: -1.6, radius: 50, page: 1, perPage: 10 },
+        db: fakeDb
+      },
       h
     )
 
-    expect(response.mock.calls[0][0]).toMatchObject({ count: 0, total: 0, totalPages: 1 })
+    expect(response.mock.calls[0][0]).toMatchObject({
+      count: 0,
+      total: 0,
+      totalPages: 1
+    })
   })
 
   it('wraps an unexpected service error as a Boom 500', async () => {
@@ -74,7 +98,10 @@ describe('handleFacilitiesNearby', () => {
 
     await expect(
       handleFacilitiesNearby(
-        { query: { lat: 55, lng: -1.6, radius: 50, page: 1, perPage: 10 }, db: fakeDb },
+        {
+          query: { lat: 55, lng: -1.6, radius: 50, page: 1, perPage: 10 },
+          db: fakeDb
+        },
         h
       )
     ).rejects.toThrow()
@@ -83,14 +110,18 @@ describe('handleFacilitiesNearby', () => {
 
 describe('facilities route', () => {
   it('is wired GET /facilities/nearby with query validation', () => {
-    expect(facilities[0]).toMatchObject({ method: 'GET', path: '/facilities/nearby' })
+    expect(facilities[0]).toMatchObject({
+      method: 'GET',
+      path: '/facilities/nearby'
+    })
     expect(facilities[0].handler).toBe(handleFacilitiesNearby)
     expect(facilities[0].options.validate.query).toBeDefined()
   })
 
   it('defaults page, perPage and radius in the query schema', () => {
     const { value, error } = facilities[0].options.validate.query.validate({
-      lat: 55, lng: -1.6
+      lat: 55,
+      lng: -1.6
     })
     expect(error).toBeUndefined()
     expect(value).toMatchObject({ page: 1, perPage: 10, radius: 50 })

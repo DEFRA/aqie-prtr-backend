@@ -9,7 +9,10 @@ export const METRES_PER_MILE = 1609.344
  * @param {{ lng:number, lat:number, radiusMeters:number, skip:number, limit:number }} params
  * @returns {Promise<{ results: object[], total: number }>}
  */
-export async function findFacilitiesNearby(db, { lng, lat, radiusMiles, skip, limit }) {
+export async function findFacilitiesNearby(
+  db,
+  { lng, lat, radiusMiles, skip, limit }
+) {
   const pipeline = [
     {
       $geoNear: {
@@ -46,7 +49,10 @@ export async function findFacilitiesNearby(db, { lng, lat, radiusMiles, skip, li
     }
   ]
 
-  const [facet] = await db.collection('facilities').aggregate(pipeline).toArray()
+  const [facet] = await db
+    .collection('facilities')
+    .aggregate(pipeline)
+    .toArray()
   return {
     results: facet?.results ?? [],
     total: facet?.totalCount?.[0]?.total ?? 0

@@ -5,7 +5,9 @@ const METRES_PER_MILE = 1609.344
 
 // Minimal chainable mock: db.collection().aggregate().toArray()
 function buildDb(facetResult) {
-  const toArray = vi.fn().mockResolvedValue(facetResult === undefined ? [] : [facetResult])
+  const toArray = vi
+    .fn()
+    .mockResolvedValue(facetResult === undefined ? [] : [facetResult])
   const aggregate = vi.fn().mockReturnValue({ toArray })
   const collection = vi.fn().mockReturnValue({ aggregate })
   return { db: { collection }, aggregate, collection }
@@ -19,7 +21,11 @@ describe('findFacilitiesNearby', () => {
     })
 
     const out = await findFacilitiesNearby(db, {
-      lng: -1.6, lat: 55.0, radiusMiles: 50, skip: 10, limit: 10
+      lng: -1.6,
+      lat: 55.0,
+      radiusMiles: 50,
+      skip: 10,
+      limit: 10
     })
 
     expect(collection).toHaveBeenCalledWith('facilities')
@@ -62,7 +68,11 @@ describe('findFacilitiesNearby', () => {
   it('returns empty results and total 0 when nothing is in range', async () => {
     const { db } = buildDb({ results: [], totalCount: [] })
     const out = await findFacilitiesNearby(db, {
-      lng: 0, lat: 0, radiusMiles: 5, skip: 0, limit: 10
+      lng: 0,
+      lat: 0,
+      radiusMiles: 5,
+      skip: 0,
+      limit: 10
     })
     expect(out).toEqual({ results: [], total: 0 })
   })
@@ -70,7 +80,11 @@ describe('findFacilitiesNearby', () => {
   it('handles aggregate returning no facet document at all', async () => {
     const { db } = buildDb(undefined) // toArray resolves to []
     const out = await findFacilitiesNearby(db, {
-      lng: 0, lat: 0, radiusMiles: 5, skip: 0, limit: 10
+      lng: 0,
+      lat: 0,
+      radiusMiles: 5,
+      skip: 0,
+      limit: 10
     })
     expect(out).toEqual({ results: [], total: 0 })
   })
