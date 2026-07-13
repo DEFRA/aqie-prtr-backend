@@ -13,7 +13,8 @@
  * Pure — exported for unit testing.
  */
 export function toCompetentAuthority(facility, report) {
-  const authority = report?.competentAuthority ?? facility.competentAuthority ?? null
+  const authority =
+    report?.competentAuthority ?? facility.competentAuthority ?? null
   const contact = authority?.contact ?? null
   const address = contact?.address ?? null
 
@@ -27,11 +28,11 @@ export function toCompetentAuthority(facility, report) {
     contactPersonName: contact?.contactPersonName ?? null,
     address: address
       ? {
-        street: address.streetName ?? null,
-        building: address.buildingNumber ?? null,
-        city: address.cityName ?? null,
-        postcode: address.postcodeCode ?? null
-      }
+          street: address.streetName ?? null,
+          building: address.buildingNumber ?? null,
+          city: address.cityName ?? null,
+          postcode: address.postcodeCode ?? null
+        }
       : null,
     telephone: contact?.telephone ?? null,
     fax: contact?.fax ?? null,

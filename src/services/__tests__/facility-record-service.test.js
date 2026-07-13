@@ -14,15 +14,43 @@ const HEADER = {
 
 const REPORT = {
   pollutantReleases: [
-    { ricardoReleaseTransferId: 7, pollutantId: 72, pollutantName: 'Lead', mediumCode: 'AIR', totalQuantity: { value: 612, unit: 'KGM' } },
-    { ricardoReleaseTransferId: 8, pollutantId: 80, pollutantName: 'Zinc', mediumCode: 'LAND', totalQuantity: { value: 3460, unit: 'KGM' } },
-    { ricardoReleaseTransferId: 10, pollutantId: 90, pollutantName: 'NP/NPEs', mediumCode: 'WATER', totalQuantity: { value: 110, unit: 'KGM' } }
+    {
+      ricardoReleaseTransferId: 7,
+      pollutantId: 72,
+      pollutantName: 'Lead',
+      mediumCode: 'AIR',
+      totalQuantity: { value: 612, unit: 'KGM' }
+    },
+    {
+      ricardoReleaseTransferId: 8,
+      pollutantId: 80,
+      pollutantName: 'Zinc',
+      mediumCode: 'LAND',
+      totalQuantity: { value: 3460, unit: 'KGM' }
+    },
+    {
+      ricardoReleaseTransferId: 10,
+      pollutantId: 90,
+      pollutantName: 'NP/NPEs',
+      mediumCode: 'WATER',
+      totalQuantity: { value: 110, unit: 'KGM' }
+    }
   ],
   pollutantTransfers: [
-    { ricardoReleaseTransferId: 11, pollutantId: 76, pollutantName: 'Nickel', totalQuantity: { value: 24, unit: 'KGM' } }
+    {
+      ricardoReleaseTransferId: 11,
+      pollutantId: 76,
+      pollutantName: 'Nickel',
+      totalQuantity: { value: 24, unit: 'KGM' }
+    }
   ],
   wasteTransfers: [
-    { ricardoReleaseTransferId: 9, wasteTypeCode: 'NONHW', wasteTreatmentCode: 'Recovery', quantity: { value: 134982, unit: 'TNE' } }
+    {
+      ricardoReleaseTransferId: 9,
+      wasteTypeCode: 'NONHW',
+      wasteTreatmentCode: 'Recovery',
+      quantity: { value: 134982, unit: 'TNE' }
+    }
   ]
 }
 
@@ -50,13 +78,35 @@ describe('toFacilityRecord', () => {
     })
     expect(out.year).toBe(2024)
     expect(out.releasesToAir).toEqual([
-      { lineId: 7, pollutantId: 72, pollutant: 'Lead', value: 612, unit: 'KGM', threshold: null }
+      {
+        lineId: 7,
+        pollutantId: 72,
+        pollutant: 'Lead',
+        value: 612,
+        unit: 'KGM',
+        threshold: null
+      }
     ])
-    expect(out.releasesToWater[0]).toMatchObject({ lineId: 10, pollutant: 'NP/NPEs' })
-    expect(out.releasesToSoil[0]).toMatchObject({ lineId: 8, pollutant: 'Zinc' }) // LAND -> soil
-    expect(out.transfersToWasteWater[0]).toMatchObject({ lineId: 11, pollutant: 'Nickel' })
+    expect(out.releasesToWater[0]).toMatchObject({
+      lineId: 10,
+      pollutant: 'NP/NPEs'
+    })
+    expect(out.releasesToSoil[0]).toMatchObject({
+      lineId: 8,
+      pollutant: 'Zinc'
+    }) // LAND -> soil
+    expect(out.transfersToWasteWater[0]).toMatchObject({
+      lineId: 11,
+      pollutant: 'Nickel'
+    })
     expect(out.wasteTransfers).toEqual([
-      { lineId: 9, value: 134982, unit: 'TNE', wasteTypeCode: 'NONHW', treatment: 'Recovery' }
+      {
+        lineId: 9,
+        value: 134982,
+        unit: 'TNE',
+        wasteTypeCode: 'NONHW',
+        treatment: 'Recovery'
+      }
     ])
   })
 
@@ -85,22 +135,35 @@ describe('toFacilityRecord', () => {
       HEADER,
       {
         pollutantReleases: [{ ricardoReleaseTransferId: 1, mediumCode: 'AIR' }], // no totalQuantity
-        pollutantTransfers: [{ ricardoReleaseTransferId: 2 }],                   // no totalQuantity
-        wasteTransfers: [{ ricardoReleaseTransferId: 3 }]                        // no quantity/codes
+        pollutantTransfers: [{ ricardoReleaseTransferId: 2 }], // no totalQuantity
+        wasteTransfers: [{ ricardoReleaseTransferId: 3 }] // no quantity/codes
       },
       2024
     )
-    expect(out.releasesToAir[0]).toMatchObject({ value: null, unit: null, threshold: null })
-    expect(out.transfersToWasteWater[0]).toMatchObject({ value: null, unit: null })
+    expect(out.releasesToAir[0]).toMatchObject({
+      value: null,
+      unit: null,
+      threshold: null
+    })
+    expect(out.transfersToWasteWater[0]).toMatchObject({
+      value: null,
+      unit: null
+    })
     expect(out.wasteTransfers[0]).toEqual({
-      lineId: 3, value: null, unit: null, wasteTypeCode: null, treatment: null
+      lineId: 3,
+      value: null,
+      unit: null,
+      wasteTypeCode: null,
+      treatment: null
     })
   })
 
   it('ignores releases with an unknown or missing medium', () => {
     const out = toFacilityRecord(
       HEADER,
-      { pollutantReleases: [{ ricardoReleaseTransferId: 1, mediumCode: null }] },
+      {
+        pollutantReleases: [{ ricardoReleaseTransferId: 1, mediumCode: null }]
+      },
       2024
     )
     expect(out.releasesToAir).toEqual([])
@@ -122,14 +185,23 @@ describe('getFacilityRecord', () => {
   })
 
   it('queries facilities by internalFacilityId with a projection', async () => {
-    const { db, facilitiesFindOne, collection } = buildDb({ header: HEADER, report: REPORT })
+    const { db, facilitiesFindOne, collection } = buildDb({
+      header: HEADER,
+      report: REPORT
+    })
 
     await getFacilityRecord(db, 'f-1', 2024)
 
     expect(collection).toHaveBeenCalledWith('facilities')
     expect(facilitiesFindOne).toHaveBeenCalledWith(
       { internalFacilityId: 'f-1' },
-      { projection: expect.objectContaining({ _id: 0, facilityName: 1, reportingYears: 1 }) }
+      {
+        projection: expect.objectContaining({
+          _id: 0,
+          facilityName: 1,
+          reportingYears: 1
+        })
+      }
     )
   })
 
@@ -140,7 +212,13 @@ describe('getFacilityRecord', () => {
 
     expect(reportsFindOne).toHaveBeenCalledWith(
       { internalFacilityId: 'f-1', reportingYear: 2023 },
-      { projection: expect.objectContaining({ _id: 0, pollutantReleases: 1, wasteTransfers: 1 }) }
+      {
+        projection: expect.objectContaining({
+          _id: 0,
+          pollutantReleases: 1,
+          wasteTransfers: 1
+        })
+      }
     )
     expect(out.year).toBe(2023)
     expect(out.releasesToAir).toHaveLength(1)

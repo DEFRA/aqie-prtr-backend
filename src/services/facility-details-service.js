@@ -10,7 +10,7 @@
  * @param {object} doc - Projected `facilities` document
  * @returns {object}
  */
- export function toFacilityDetails(doc) {
+export function toFacilityDetails(doc) {
   const coordinates = doc.location?.coordinates ?? null // stored [lng, lat]
   const activity = [doc.mainPrtrActivityCode, doc.mainPrtrActivityName]
     .filter(Boolean)

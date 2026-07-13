@@ -71,19 +71,17 @@ export async function getFacilityRecord(db, internalFacilityId, year) {
   if (!header) return null
 
   const reportingYear = year ?? header.latestReportingYear
-  const report = await db
-    .collection('facility_reports')
-    .findOne(
-      { internalFacilityId, reportingYear },
-      {
-        projection: {
-          _id: 0,
-          pollutantReleases: 1,
-          pollutantTransfers: 1,
-          wasteTransfers: 1
-        }
+  const report = await db.collection('facility_reports').findOne(
+    { internalFacilityId, reportingYear },
+    {
+      projection: {
+        _id: 0,
+        pollutantReleases: 1,
+        pollutantTransfers: 1,
+        wasteTransfers: 1
       }
-    )
+    }
+  )
 
   return toFacilityRecord(header, report, reportingYear)
 }

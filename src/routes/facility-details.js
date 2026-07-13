@@ -37,7 +37,8 @@ export const facilityDetails = [
     path: '/facilities/{id}/details',
     options: {
       tags: ['api', 'facilities'],
-      description: "A facility's reference details (address, NACE, NUTS, river basin).",
+      description:
+        "A facility's reference details (address, NACE, NUTS, river basin).",
       validate: { params: paramsSchema }
     },
     handler: handleFacilityDetails

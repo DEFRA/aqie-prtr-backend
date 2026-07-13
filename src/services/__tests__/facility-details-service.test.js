@@ -41,7 +41,9 @@ describe('toFacilityDetails', () => {
   })
 
   it('joins the PRTR activity code and name', () => {
-    expect(toFacilityDetails(DOC).activity).toBe('5c Disposal of non-hazardous waste')
+    expect(toFacilityDetails(DOC).activity).toBe(
+      '5c Disposal of non-hazardous waste'
+    )
   })
 
   it('maps nace, nuts, river basin and national id', () => {
@@ -67,12 +69,19 @@ describe('toFacilityDetails', () => {
   })
 
   it('handles a facility with no location, address, nuts or activity', () => {
-    const dto = toFacilityDetails({ internalFacilityId: 'f-2', facilityName: 'X' })
+    const dto = toFacilityDetails({
+      internalFacilityId: 'f-2',
+      facilityName: 'X'
+    })
     expect(dto.coordinates).toBeNull()
     expect(dto.nutsRegion).toBeNull()
     expect(dto.activity).toBeNull()
     expect(dto.address).toEqual({
-      street: null, city: null, postcode: null, county: null, country: null
+      street: null,
+      city: null,
+      postcode: null,
+      county: null,
+      country: null
     })
   })
 })
@@ -88,7 +97,13 @@ describe('getFacilityDetails', () => {
     expect(collection).toHaveBeenCalledWith('facilities')
     expect(findOne).toHaveBeenCalledWith(
       { internalFacilityId: 'f-1' },
-      { projection: expect.objectContaining({ _id: 0, facilityName: 1, location: 1 }) }
+      {
+        projection: expect.objectContaining({
+          _id: 0,
+          facilityName: 1,
+          location: 1
+        })
+      }
     )
   })
 

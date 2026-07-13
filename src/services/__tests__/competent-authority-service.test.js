@@ -74,7 +74,10 @@ describe('toCompetentAuthority', () => {
   })
 
   it('returns nulls when the facility has no competent authority at all', () => {
-    const out = toCompetentAuthority({ internalFacilityId: 'f-2', facilityName: 'X' }, null)
+    const out = toCompetentAuthority(
+      { internalFacilityId: 'f-2', facilityName: 'X' },
+      null
+    )
     expect(out.name).toBeNull()
     expect(out.agency).toBeNull()
     expect(out.address).toBeNull()
@@ -91,12 +94,18 @@ describe('getCompetentAuthority', () => {
   })
 
   it('asks for the LATEST report that has contact details, regardless of year', async () => {
-    const { db, reportsFindOne } = buildDb({ facility: FACILITY, report: REPORT })
+    const { db, reportsFindOne } = buildDb({
+      facility: FACILITY,
+      report: REPORT
+    })
 
     await getCompetentAuthority(db, 'f-1')
 
     expect(reportsFindOne).toHaveBeenCalledWith(
-      { internalFacilityId: 'f-1', 'competentAuthority.contact': { $ne: null } },
+      {
+        internalFacilityId: 'f-1',
+        'competentAuthority.contact': { $ne: null }
+      },
       expect.objectContaining({ sort: { reportingYear: -1 } })
     )
   })

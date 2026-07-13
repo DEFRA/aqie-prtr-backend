@@ -54,7 +54,10 @@ describe('handleFacilityDetails', () => {
 
     await expect(
       handleFacilityDetails({ params: { id: VALID_ID }, db: fakeDb }, h)
-    ).rejects.toMatchObject({ isBoom: true, output: { statusCode: statusCodes.internalServerError } })
+    ).rejects.toMatchObject({
+      isBoom: true,
+      output: { statusCode: statusCodes.internalServerError }
+    })
   })
 })
 

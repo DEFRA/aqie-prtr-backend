@@ -117,8 +117,6 @@ describe('competentAuthority route', () => {
   })
 
   it('does not accept a year param', () => {
-    expect(
-      schema().validate({ id: VALID_ID, year: 2024 }).error
-    ).toBeDefined() // Joi.object() is strict by default — unknown keys rejected
+    expect(schema().validate({ id: VALID_ID, year: 2024 }).error).toBeDefined() // Joi.object() is strict by default — unknown keys rejected
   })
 })
