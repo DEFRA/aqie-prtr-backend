@@ -4,6 +4,7 @@ import { facilities } from '#src/routes/facilities.js'
 import { reports } from '#src/routes/reports.js'
 import { facilityRecord } from '#src/routes/facility-record.js'
 import { facilityDetails } from '#src/routes/facility-details.js'
+import { competentAuthority } from '#src/routes/competent-authority.js'
 
 export const router = {
   plugin: {
@@ -15,7 +16,8 @@ export const router = {
         ...facilities,
         ...reports,
         ...facilityRecord,
-        ...facilityDetails
+        ...facilityDetails,
+        ...competentAuthority
       ])
     }
   }
