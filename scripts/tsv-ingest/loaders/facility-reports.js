@@ -203,17 +203,31 @@ export async function run() {
   }
 
   // Activities: ricardoId per taxonomy → resolved code + name
+    // Ricardo puts the IPPC↔PRTR link on the IPPC activity row via
+  // linkedPrtrCode (activity_ippc.prtr_id in the source, matching
+  // activity_prtr.matchCode like "5c"). Because source-side
+  // facility_activity.activity_ippc_id is NULL in ~94% of rows (only 7,124
+  // of 113,357 have it set), if we only used activity_ippc_id we'd emit an
+  // IPPC entry for almost no facility. Instead: when a facility_activity row
+  // has a PRTR activity but no IPPC id, we derive the IPPC via
+  // linkedPrtrCode. That matches how Ricardo's public register shows
+  // "Activity: 5.c" alongside "IPPC: 5.3" for the same facility.
   const ippcById = new Map()
   const prtrById = new Map()
+  const ippcByLinkedPrtrCode = new Map() // linkedPrtrCode → ippc def
   for (const doc of await db().collection('activities').find().toArray()) {
     if (doc.taxonomy === 'ippc') {
-      ippcById.set(doc.ricardoId, {
+      const def = {
         code: doc.code,
         matchCode: doc.matchCode,
         name: doc.name,
         description: doc.description,
         categoryName: doc.categoryName
-      })
+      }
+      ippcById.set(doc.ricardoId, def)
+      if (doc.linkedPrtrCode) {
+        ippcByLinkedPrtrCode.set(doc.linkedPrtrCode, def)
+      }
     }
     if (doc.taxonomy === 'prtr') {
       prtrById.set(doc.ricardoId, {
@@ -225,6 +239,7 @@ export async function run() {
       })
     }
   }
+
 
   const confidentialById = new Map()
   for (const doc of await db()
@@ -640,6 +655,25 @@ export async function run() {
             isMainActivity: a.isMain,
             ranking: ranking++
           })
+          // Derive IPPC via linkedPrtrCode when source's activity_ippc_id
+          // is missing (NULL in facility_activity.tsv, integer 0 in
+          // facility_record_activity.tsv — both mean "no IPPC assigned").
+          // Only when no explicit IPPC was already pushed, to avoid duplicates.
+          if (!a.ippcId) {
+            const derived = ippcByLinkedPrtrCode.get(def.matchCode)
+            if (derived) {
+              activities.push({
+                activityCode: derived.matchCode,
+                name: derived.name,
+                description: derived.description,
+                categoryName: derived.categoryName,
+                taxonomy: 'ippc',
+                isMainActivity: a.isMain,
+                ranking: ranking++,
+                derivedFromPrtr: true
+              })
+            }
+          }
         }
       }
     }
@@ -992,6 +1026,25 @@ export async function run() {
             isMainActivity: a.isMain,
             ranking: ranking++
           })
+          // Derive IPPC via linkedPrtrCode when source's activity_ippc_id
+          // is missing (NULL in facility_activity.tsv, integer 0 in
+          // facility_record_activity.tsv — both mean "no IPPC assigned").
+          // Only when no explicit IPPC was already pushed, to avoid duplicates.
+          if (!a.ippcId) {
+            const derived = ippcByLinkedPrtrCode.get(def.matchCode)
+            if (derived) {
+              activities.push({
+                activityCode: derived.matchCode,
+                name: derived.name,
+                description: derived.description,
+                categoryName: derived.categoryName,
+                taxonomy: 'ippc',
+                isMainActivity: a.isMain,
+                ranking: ranking++,
+                derivedFromPrtr: true
+              })
+            }
+          }
         }
       }
     }

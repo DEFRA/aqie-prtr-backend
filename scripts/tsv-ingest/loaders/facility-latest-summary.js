@@ -25,6 +25,22 @@ export const meta = {
 export async function run() {
   const log = loaderLogger(meta.name)
 
+  // PRTR-code → IPPC def, for deriving mainIppcActivityCode when the source
+  // didn't populate activity_ippc_id (94% of source facility_activity rows
+  // have it NULL). Belt-and-braces alongside the derivation loader 31 does
+  // — this loader still works correctly even if loader wasn't re-run.
+  const ippcByLinkedPrtrCode = new Map()
+  for (const doc of await db()
+    .collection('activities')
+    .find({ taxonomy: 'ippc', linkedPrtrCode: { $ne: null } })
+    .toArray()) {
+    ippcByLinkedPrtrCode.set(doc.linkedPrtrCode, {
+      code: doc.code,
+      matchCode: doc.matchCode,
+      name: doc.name
+    })
+  }
+
   // Aggregate per-facility summary from facilityReports
   const pipeline = [
     {
@@ -89,9 +105,19 @@ export async function run() {
     const mainPrtr =
       activities.find((a) => a.taxonomy === 'prtr' && a.isMainActivity) ??
       activities.find((a) => a.taxonomy === 'prtr')
-    const mainIppc =
+      let mainIppc =
       activities.find((a) => a.taxonomy === 'ippc' && a.isMainActivity) ??
       activities.find((a) => a.taxonomy === 'ippc')
+
+    // If facility_reports doesn't carry an IPPC activity (either because
+    // loader 31 hasn't been re-run with the derivation fix, or because the
+    // linked IPPC really doesn't exist), derive it here from the PRTR code.
+    if (!mainIppc && mainPrtr?.activityCode) {
+      const derived = ippcByLinkedPrtrCode.get(mainPrtr.activityCode)
+      if (derived) {
+        mainIppc = { activityCode: derived.matchCode, name: derived.name }
+      }
+    }
 
     updates.push({
       updateOne: {
