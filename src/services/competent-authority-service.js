@@ -8,35 +8,52 @@
  * actually has a contact block, and fall back to the facility's own authority.
  */
 
+const EMPTY = {}
+
+function resolveAuthority(facility, report) {
+  return report?.competentAuthority ?? facility.competentAuthority ?? EMPTY
+}
+
+function toAuthorityNames(authority) {
+  return {
+    name: authority.regulatoryAuthority?.name ?? null,
+    agency: authority.agency?.acronym ?? null
+  }
+}
+
+function toContactDetails(contact) {
+  return {
+    contactPersonName: contact.contactPersonName ?? null,
+    telephone: contact.telephone ?? null,
+    fax: contact.fax ?? null,
+    email: contact.email ?? null
+  }
+}
+
+function toAddress(address) {
+  return {
+    street: address.streetName ?? null,
+    building: address.buildingNumber ?? null,
+    city: address.cityName ?? null,
+    postcode: address.postcodeCode ?? null
+  }
+}
+
 /**
  * Shape a facility + its latest CA-bearing report into the page DTO.
  * Pure — exported for unit testing.
  */
 export function toCompetentAuthority(facility, report) {
-  const authority =
-    report?.competentAuthority ?? facility.competentAuthority ?? null
-  const contact = authority?.contact ?? null
-  const address = contact?.address ?? null
+  const authority = resolveAuthority(facility, report)
+  const contact = authority.contact ?? EMPTY
 
   return {
     facilityId: facility.internalFacilityId,
     facilityName: facility.facilityName,
-    // Which year the details were taken from — useful for support/debugging.
     sourceYear: report?.reportingYear ?? null,
-    name: authority?.regulatoryAuthority?.name ?? null,
-    agency: authority?.agency?.acronym ?? null,
-    contactPersonName: contact?.contactPersonName ?? null,
-    address: address
-      ? {
-          street: address.streetName ?? null,
-          building: address.buildingNumber ?? null,
-          city: address.cityName ?? null,
-          postcode: address.postcodeCode ?? null
-        }
-      : null,
-    telephone: contact?.telephone ?? null,
-    fax: contact?.fax ?? null,
-    email: contact?.email ?? null
+    ...toAuthorityNames(authority),
+    ...toContactDetails(contact),
+    address: contact.address ? toAddress(contact.address) : null
   }
 }
 
