@@ -6,75 +6,79 @@
  * `ricardoReleaseTransferId`, which is unique across the report's arrays —
  * more robust than an array index.
  */
- const PERCENT = 100
+const PERCENT = 100
 
- function percentOf(part, whole) {
-   if (!whole) {
-     return 0
-   }
-   return Math.round((part / whole) * PERCENT)
- }
+function percentOf(part, whole) {
+  if (!whole) {
+    return 0
+  }
+  return Math.round((part / whole) * PERCENT)
+}
 
- function toMethodAndConfidentiality(entry, method, confidentialReason) {
-   return {
-     methodBasis: entry.methodBasisCode ?? null,
-     methodDescription: method?.methodDescription ?? null,
-     // null => the FE renders "None"
-     confidentiality: confidentialReason
-       ? { code: confidentialReason.code, name: confidentialReason.name }
-       : null
-   }
- }
+function toMethodAndConfidentiality(entry, method, confidentialReason) {
+  return {
+    methodBasis: entry.methodBasisCode ?? null,
+    methodDescription: method?.methodDescription ?? null,
+    // null => the FE renders "None"
+    confidentiality: confidentialReason
+      ? { code: confidentialReason.code, name: confidentialReason.name }
+      : null
+  }
+}
 
- function toReceiverCompany(handler) {
-   if (!handler) {
-     return null
-   }
-   return { name: handler.name ?? null, address: handler.address ?? null }
- }
+function toReceiverCompany(handler) {
+  if (!handler) {
+    return null
+  }
+  return { name: handler.name ?? null, address: handler.address ?? null }
+}
 
- function toWasteDetail(entry) {
-   const handler = entry.wasteHandlerParty
-   return {
-     kind: 'waste',
-     wasteTypeCode: entry.wasteTypeCode ?? null,
-     treatment: entry.wasteTreatmentCode ?? null,
-     quantity: entry.quantity ?? null,
-     receiverCompany: toReceiverCompany(handler),
-     site: handler?.siteAddress ?? null
-   }
- }
+function toWasteDetail(entry) {
+  const handler = entry.wasteHandlerParty
+  return {
+    kind: 'waste',
+    wasteTypeCode: entry.wasteTypeCode ?? null,
+    treatment: entry.wasteTreatmentCode ?? null,
+    quantity: entry.quantity ?? null,
+    receiverCompany: toReceiverCompany(handler),
+    site: handler?.siteAddress ?? null
+  }
+}
 
- function toPollutantDetail(kind, entry) {
-   // Transfers carry no accidentalQuantity in the source — default to zero.
-   const accidental = entry.accidentalQuantity?.value ?? 0
-   const total = entry.totalQuantity?.value ?? null
+function toPollutantDetail(kind, entry) {
+  // Transfers carry no accidentalQuantity in the source — default to zero.
+  const accidental = entry.accidentalQuantity?.value ?? 0
+  const total = entry.totalQuantity?.value ?? null
 
-   return {
-     kind, // 'release' | 'transfer'
-     medium: entry.mediumCode ?? null, // AIR | WATER | LAND (null for a transfer)
-     pollutant: entry.pollutantName,
-     total: entry.totalQuantity ?? null,
-     // Reporting thresholds are not in the Ricardo export yet.
-     threshold: null,
-     accidental,
-     percentAccidental: percentOf(accidental, total)
-   }
- }
+  return {
+    kind, // 'release' | 'transfer'
+    medium: entry.mediumCode ?? null, // AIR | WATER | LAND (null for a transfer)
+    pollutant: entry.pollutantName,
+    total: entry.totalQuantity ?? null,
+    // Reporting thresholds are not in the Ricardo export yet.
+    threshold: null,
+    accidental,
+    percentAccidental: percentOf(accidental, total)
+  }
+}
 
- /**
-  * Shape a located line into the additional-detail DTO.
-  * Pure — exported for unit testing.
-  */
- export function toAdditionalDetail({ kind, entry }, method, confidentialReason) {
-   const detail =
-     kind === 'waste' ? toWasteDetail(entry) : toPollutantDetail(kind, entry)
+/**
+ * Shape a located line into the additional-detail DTO.
+ * Pure — exported for unit testing.
+ */
+export function toAdditionalDetail(
+  { kind, entry },
+  method,
+  confidentialReason
+) {
+  const detail =
+    kind === 'waste' ? toWasteDetail(entry) : toPollutantDetail(kind, entry)
 
-   return {
-     ...detail,
-     ...toMethodAndConfidentiality(entry, method, confidentialReason)
-   }
- }
+  return {
+    ...detail,
+    ...toMethodAndConfidentiality(entry, method, confidentialReason)
+  }
+}
 
 /**
  * Locate a line in a report by its ricardoReleaseTransferId.

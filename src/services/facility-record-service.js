@@ -68,7 +68,9 @@ export async function getFacilityRecord(db, internalFacilityId, year) {
       }
     }
   )
-  if (!header) { return null }
+  if (!header) {
+    return null
+  }
 
   const reportingYear = year ?? header.latestReportingYear
   const report = await db.collection('facility_reports').findOne(
