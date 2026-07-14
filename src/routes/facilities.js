@@ -55,7 +55,9 @@ export async function handleFacilitiesNearby(request, h) {
     logger.error(
       `[facilities.nearby] failed lat=${lat} lng=${lng}: ${error.message}`
     )
-    if (Boom.isBoom(error)) throw error
+    if (Boom.isBoom(error)) {
+      throw error
+    }
     throw Boom.internal('Unable to retrieve facilities')
   }
 }

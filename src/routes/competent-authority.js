@@ -26,7 +26,9 @@ export async function handleCompetentAuthority(request, h) {
     return h.response(authority).code(statusCodes.ok)
   } catch (error) {
     logger.error(`[competent-authority] failed id=${id}: ${error.message}`)
-    if (Boom.isBoom(error)) throw error
+    if (Boom.isBoom(error)) {
+      throw error
+    }
     throw Boom.internal('Unable to retrieve competent authority')
   }
 }

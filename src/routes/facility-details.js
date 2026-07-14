@@ -26,7 +26,9 @@ export async function handleFacilityDetails(request, h) {
     return h.response(details).code(statusCodes.ok)
   } catch (error) {
     logger.error(`[facility-details] failed id=${id}: ${error.message}`)
-    if (Boom.isBoom(error)) throw error
+    if (Boom.isBoom(error)) {
+      throw error
+    }
     throw Boom.internal('Unable to retrieve facility details')
   }
 }

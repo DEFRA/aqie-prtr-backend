@@ -45,7 +45,9 @@ export async function handleAdditionalDetail(request, h) {
     logger.error(
       `[additional-detail] failed id=${id} year=${year} line=${lineId}: ${error.message}`
     )
-    if (Boom.isBoom(error)) throw error
+    if (Boom.isBoom(error)) {
+      throw error
+    }
     throw Boom.internal('Unable to retrieve additional detail')
   }
 }

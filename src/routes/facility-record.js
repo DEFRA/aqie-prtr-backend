@@ -35,7 +35,9 @@ export async function handleFacilityRecord(request, h) {
     return h.response(record).code(statusCodes.ok)
   } catch (error) {
     logger.error(`[facility-record] failed id=${id}: ${error.message}`)
-    if (Boom.isBoom(error)) throw error
+    if (Boom.isBoom(error)) {
+      throw error
+    }
     throw Boom.internal('Unable to retrieve facility record')
   }
 }
