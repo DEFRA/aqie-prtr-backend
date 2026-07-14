@@ -3,40 +3,56 @@
  * Separate from facility-record (which is the per-year releases & transfers).
  */
 
+const EMPTY = {}
+
+function toActivity(doc) {
+  return (
+    [doc.mainPrtrActivityCode, doc.mainPrtrActivityName]
+      .filter(Boolean)
+      .join(' ') || null
+  )
+}
+
+function toAddress(address) {
+  return {
+    street: address.streetName ?? null,
+    city: address.cityName ?? null,
+    postcode: address.postcode ?? null,
+    county: address.countyName ?? null,
+    country: address.countryName ?? null
+  }
+}
+
+/** Mongo stores GeoJSON [lng, lat]; the screen shows (Lat, Lon). */
+function toCoordinates(location) {
+  const coordinates = location?.coordinates
+  if (!coordinates) {
+    return null
+  }
+  return { lat: coordinates[1], lng: coordinates[0] }
+}
+
+function toNutsRegion(doc) {
+  if (!doc.nutsRegionName) {
+    return null
+  }
+  return { name: doc.nutsRegionName, code: doc.nutsRegionId ?? null }
+}
+
 /**
  * Shape a facility document into the details-page DTO.
  * Pure — exported for unit testing.
- *
- * @param {object} doc - Projected `facilities` document
- * @returns {object}
  */
 export function toFacilityDetails(doc) {
-  const coordinates = doc.location?.coordinates ?? null // stored [lng, lat]
-  const activity = [doc.mainPrtrActivityCode, doc.mainPrtrActivityName]
-    .filter(Boolean)
-    .join(' ')
-
   return {
     id: doc.internalFacilityId,
     name: doc.facilityName,
     nationalId: doc.facilityCode,
-    activity: activity || null,
-    // Most facilities have no IPPC activity recorded; the FE renders "—".
+    activity: toActivity(doc),
     ippcCode: doc.mainIppcActivityCode ?? null,
-    address: {
-      street: doc.address?.streetName ?? null,
-      city: doc.address?.cityName ?? null,
-      postcode: doc.address?.postcode ?? null,
-      county: doc.address?.countyName ?? null,
-      country: doc.address?.countryName ?? null
-    },
-    // Swap to (lat, lon) for display — Mongo stores GeoJSON [lng, lat].
-    coordinates: coordinates
-      ? { lat: coordinates[1], lng: coordinates[0] }
-      : null,
-    nutsRegion: doc.nutsRegionName
-      ? { name: doc.nutsRegionName, code: doc.nutsRegionId ?? null }
-      : null,
+    address: toAddress(doc.address ?? EMPTY),
+    coordinates: toCoordinates(doc.location),
+    nutsRegion: toNutsRegion(doc),
     naceCode: doc.naceCode ?? null,
     naceName: doc.mainEconomicActivityName ?? null,
     riverBasin: doc.riverBasinDistrictName ?? null
