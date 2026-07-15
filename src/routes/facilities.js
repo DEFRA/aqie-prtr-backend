@@ -12,9 +12,15 @@ const MAX_PER_PAGE = 100
 const DEFAULT_RADIUS_MILES = 50
 const MAX_RADIUS_MILES = 50
 
+//Geographic coordinate bounds (WGS84 degrees)
+const MIN_LATITUDE = -90
+const MAX_LATITUDE = 90
+const MIN_LONGITUDE = -180
+const MAX_LONGITUDE = 180
+
 const querySchema = Joi.object({
-  lat: Joi.number().min(-90).max(90).required(),
-  lng: Joi.number().min(-180).max(180).required(),
+  lat: Joi.number().min(MIN_LATITUDE).max(MAX_LATITUDE).required(),
+  lng: Joi.number().min(MIN_LONGITUDE).max(MAX_LONGITUDE).required(),
   radius: Joi.number()
     .min(1)
     .max(MAX_RADIUS_MILES)
