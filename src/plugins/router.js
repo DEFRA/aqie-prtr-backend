@@ -6,6 +6,7 @@ import { facilityRecord } from '#src/routes/facility-record.js'
 import { facilityDetails } from '#src/routes/facility-details.js'
 import { competentAuthority } from '#src/routes/competent-authority.js'
 import { additionalDetail } from '../routes/additional-detail.js'
+import { facilitySearch } from '#src/routes/facility-search.js'
 
 export const router = {
   plugin: {
@@ -19,7 +20,8 @@ export const router = {
         ...facilityRecord,
         ...facilityDetails,
         ...competentAuthority,
-        ...additionalDetail
+        ...additionalDetail,
+        ...facilitySearch
       ])
     }
   }
