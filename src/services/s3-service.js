@@ -4,7 +4,9 @@ import {
   S3Client,
   ListObjectsV2Command,
   GetObjectCommand,
-  HeadObjectCommand
+  HeadObjectCommand,
+  CopyObjectCommand,
+  DeleteObjectCommand
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { config } from '#src/config.js'
@@ -93,25 +95,109 @@ export const findKeyByMetadataFilename = async (bucketName, year) => {
   throw new Error(`File not found: ${encodedFilename}`)
 }
 
+export const renameS3Object = async (bucketName, oldKey, newKey) => {
+  try {
+    // Step 1: copy object to new key
+    await s3Client.send(
+      new CopyObjectCommand({
+        Bucket: bucketName,
+        CopySource: `${bucketName}/${oldKey}`,
+        Key: newKey,
+        MetadataDirective: 'COPY' // ✅ preserves metadata
+      })
+    )
+
+    // Step 2: delete the old object
+    await s3Client.send(
+      new DeleteObjectCommand({
+        Bucket: bucketName,
+        Key: oldKey
+      })
+    )
+
+    logger.info(`Successfully renamed ${oldKey} → ${newKey}`)
+  } catch (error) {
+    logger.error(error, 'Failed to rename S3 object')
+    throw new S3BackendError(`Failed to rename S3 object: ${error.message}`, {
+      cause: error
+    })
+  }
+}
+
+/**
+ * Gets the S3 key for a report file, locating and organizing it as needed.
+ * Checks for the file at the target key first, then searches by metadata if needed.
+ * If found by metadata, renames it to the target key for future use.
+ *
+ * @param {string} bucketName - The name of the S3 bucket
+ * @param {number} year - The year of the report
+ * @returns {Promise<string>} - The S3 key for the report file (always the target key format)
+ * @throws {S3BackendError} - If file cannot be located or organized
+ */
+export const getReportFileKey = async (bucketName, year) => {
+  // Step 1: Check if file exists with target key
+  const targetFileKey = `reports/uk_prtr_dataset_${year}.xml`
+  try {
+    await s3Client.send(
+      new HeadObjectCommand({
+        Bucket: bucketName,
+        Key: targetFileKey
+      })
+    )
+    logger.info(`Found file with key: ${targetFileKey}`)
+    return targetFileKey
+  } catch (headError) {
+    // Only proceed to metadata search if file doesn't exist (expected case)
+    // Let other errors (permissions, network, etc) propagate
+    if (headError.name === 'NoSuchKey') {
+      logger.info(
+        `No file with key ${targetFileKey}, searching by metadata for year ${year}`
+      )
+    } else {
+      throw headError
+    }
+  }
+
+  // Step 2: If no file with target key found, search using metadata
+  try {
+    const foundKey = await findKeyByMetadataFilename(bucketName, year)
+    logger.info(`Found file by metadata search: ${foundKey}`)
+
+    // Step 3: Rename the file to target key for future use
+    await renameS3Object(bucketName, foundKey, targetFileKey)
+    logger.info(`Renamed file to target key: ${targetFileKey}`)
+
+    return targetFileKey
+  } catch (searchError) {
+    throw new S3BackendError(
+      `Failed to locate report file for year ${year}: ${searchError.message}`,
+      { cause: searchError }
+    )
+  }
+}
+
 /**
  * Generates a presigned download link for a report for a specific year.
+ * Flow:
+ * 1. Get the report file key (checking target key first, then metadata search)
+ * 2. Organize it to the target key if needed
+ * 3. Generate and return the presigned download link
+ *
  * @param {string} bucketName - The name of the S3 bucket
- * @param {string} fileKey - The key of the file in the S3 bucket
  * @param {number} year - The year of the report to download
  * @returns {Promise<string>} - A presigned URL for downloading the file
+ * @throws {S3BackendError} - If any step fails
  */
-export const generatePresignedReportDownloadLink = async (
-  bucketName,
-  fileKey,
-  year
-) => {
+export const generatePresignedReportDownloadLink = async (bucketName, year) => {
   try {
+    const fileKey = await getReportFileKey(bucketName, year)
+
+    // Generate presigned download link
     const downloadCommand = new GetObjectCommand({
       Bucket: bucketName,
       Key: fileKey
     })
 
-    // Generate a temporary download link (expires in 150 mins)
     const presignedUrl = await getSignedUrl(s3Client, downloadCommand, {
       expiresIn: PRESIGNED_URL_EXPIRY_SECONDS
     })
@@ -119,6 +205,10 @@ export const generatePresignedReportDownloadLink = async (
     logger.info(`Successfully generated S3 download link for year ${year}.`)
     return presignedUrl
   } catch (error) {
+    // Ensure all errors are thrown as S3BackendError
+    if (error instanceof S3BackendError) {
+      throw error
+    }
     logger.error(error, 'Failed to generate S3 download link')
     throw new S3BackendError(
       `Failed to generate S3 download link: ${error.message}`,

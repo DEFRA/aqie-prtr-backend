@@ -1,7 +1,6 @@
 import exampleReports from '../data/example-reports.js'
 import {
   generatePresignedReportDownloadLink,
-  findKeyByMetadataFilename,
   S3BackendError
 } from './s3-service.js'
 import { createLogger } from '#src/common/helpers/logging/logger.js'
@@ -64,68 +63,25 @@ async function getReports(_db) {
  * Get a presigned download link for a report by year.
  *
  * Strategy:
- * 1. First, check if the S3 key is stored in the database (fast)
- * 2. If not found, search S3 metadata to find the key (slower, fallback)
- * 3. Generate and return a presigned download URL
+ * 1. Search S3 standard location for the file (reports/uk_prtr_dataset_${year}.xml)
+ * 2. If not found, search S3 metadata to find the file
+ * 3. Rename the file to standard location for future use
+ * 4. Generate and return a presigned download URL
  *
- * @param {object} db - MongoDB database instance
  * @param {number} year - Year of the report
  * @param {string} bucketName - S3 bucket name
  * @returns {Promise<string>} - Presigned download URL
  * @throws {ReportsBackendError|S3BackendError}
  */
-export async function getReportDownloadLink(db, year, bucketName) {
+export async function getReportDownloadLink(year, bucketName) {
   try {
-    let s3Key
+    logger.info(
+      `[get-report-download] Generating download link for year=${year}`
+    )
 
-    // Step 1: Try to get S3 key from database
-    try {
-      const reportsCollection = db.collection('Reports')
-      const report = await reportsCollection.findOne({ year })
-
-      if (report?.s3Key) {
-        logger.info(`[get-report-download] Found S3 key in DB for year=${year}`)
-        s3Key = report.s3Key
-      }
-    } catch (dbError) {
-      logger.warn(
-        `[get-report-download] Database lookup failed for year=${year}, will search S3 instead`,
-        dbError.message
-      )
-    }
-
-    // Step 2: If not in database, search S3 by metadata
-    if (!s3Key) {
-      logger.info(
-        `[get-report-download] S3 key not in DB for year=${year}, searching S3 metadata...`
-      )
-      s3Key = await findKeyByMetadataFilename(bucketName, year)
-      logger.info(`[get-report-download] Found S3 key in S3 for year=${year}`)
-
-      // Step 2a: Save the S3 key to database for faster future lookups
-      try {
-        // const reportsCollection = db.collection('Reports')
-        // await reportsCollection.updateOne(
-        //   { year },
-        //   { $set: { s3Key } },
-        //   { upsert: true }
-        // )
-        logger.info(
-          `[get-report-download] Cached S3 key in DB for year=${year}`
-        )
-      } catch (cacheError) {
-        logger.warn(
-          `[get-report-download] Failed to cache S3 key in DB for year=${year}`,
-          cacheError.message
-        )
-        // Don't throw - continue anyway, just won't be cached
-      }
-    }
-
-    // Step 3: Generate presigned URL
+    // Generate presigned URL (handles search and rename internally)
     const presignedUrl = await generatePresignedReportDownloadLink(
       bucketName,
-      s3Key,
       year
     )
 
